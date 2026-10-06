@@ -63,3 +63,11 @@ fastlane/test_output
 
 # Local design mockups and Notion task snapshots: personal data, never committed
 designs/
+
+# Generated projects and local graph verification artifacts
+Circle.xcodeproj/
+.swiftpm/
+.superpowers/
+
+# Contact exports are private state, never fixtures or source.
+*.csv
