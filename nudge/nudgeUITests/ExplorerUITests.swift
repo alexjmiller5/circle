@@ -23,6 +23,9 @@ final class ExplorerUITests: XCTestCase {
         search.clickOrTap()
         search.typeText("Person 1")
         app.buttons["search-person-01"].clickOrTap()
+        #if os(iOS)
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "Selecting a search result should dismiss the keyboard")
+        #endif
         XCTAssertTrue(app.staticTexts["Focus: Person 1"].waitForExistence(timeout: 3))
         app.buttons["layout-pathways"].clickOrTap()
         XCTAssertTrue(app.staticTexts["Focus: Person 1"].exists)

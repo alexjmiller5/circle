@@ -23,6 +23,7 @@ struct ExplorerView: View {
     let graph: SocialGraph
     @State private var state: ExplorerState
     @State private var query = ""
+    @FocusState private var searchFocused: Bool
     @State private var centerRequest = 0
     @State private var positions: [String: GraphPoint]
     private let preferences: UserDefaults
@@ -101,6 +102,7 @@ struct ExplorerView: View {
                 .font(.subheadline).foregroundStyle(.secondary)
             TextField("Find a person", text: $query)
                 .textFieldStyle(.roundedBorder).accessibilityIdentifier("Find a person")
+                .focused($searchFocused).onSubmit { searchFocused = false }
             if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 let matches = graph.people.filter { $0.name.localizedStandardContains(query.trimmingCharacters(in: .whitespacesAndNewlines)) }
                 if matches.isEmpty { Text("No matching people").foregroundStyle(.secondary) }
@@ -179,6 +181,7 @@ struct ExplorerView: View {
     }
 
     private func select(_ focus: GraphFocus) {
+        searchFocused = false
         state.select(focus)
         centerRequest &+= 1
     }
