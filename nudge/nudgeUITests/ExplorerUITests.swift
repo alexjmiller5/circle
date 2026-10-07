@@ -43,6 +43,56 @@ final class ExplorerUITests: XCTestCase {
         shot.name = "Native explorer"; shot.lifetime = .keepAlways; add(shot)
     }
     @MainActor
+    func testTrackingSurvivesRelaunchAndCanBeRemoved() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview-graph", "--reset-explorer-preferences"]
+        app.launch()
+        let search = app.textFields["Find a person"]
+        search.clickOrTap()
+        search.typeText("Person 1")
+        app.buttons["search-person-01"].clickOrTap()
+        let track = app.buttons["tracking-person-01"]
+        XCTAssertTrue(track.waitForExistence(timeout: 5))
+        track.clickOrTap()
+        XCTAssertEqual(track.value as? String, "Tracked")
+        app.terminate()
+        app.launchArguments = ["--preview-graph"]
+        app.launch()
+        let tracked = app.buttons["tracked-person-01"]
+        XCTAssertTrue(tracked.waitForExistence(timeout: 5))
+        tracked.clickOrTap()
+        XCTAssertEqual(app.buttons["tracking-person-01"].value as? String, "Tracked")
+        app.buttons["tracking-person-01"].clickOrTap()
+        XCTAssertFalse(app.buttons["tracked-person-01"].exists)
+    }
+
+    @MainActor
+    func testReachOutHistoryUnknownAndSettingsPersist() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview-graph", "--reset-explorer-preferences"]
+        app.launch()
+        app.textFields["Find a person"].clickOrTap()
+        app.textFields["Find a person"].typeText("Person 1")
+        app.buttons["search-person-01"].clickOrTap()
+        app.buttons["tracking-person-01"].clickOrTap()
+        app.buttons["Reach out"].clickOrTap()
+        XCTAssertTrue(app.staticTexts["History incomplete"].waitForExistence(timeout: 5))
+        app.buttons["reachout-person-01"].clickOrTap()
+        XCTAssertTrue(app.staticTexts["No verified contact history is connected."].exists)
+        app.buttons["cadence-quarterly"].clickOrTap()
+        app.buttons["priority-high"].clickOrTap()
+        app.terminate()
+        app.launchArguments = ["--preview-graph"]
+        app.launch()
+        app.buttons["Reach out"].clickOrTap()
+        app.buttons["reachout-person-01"].clickOrTap()
+        XCTAssertEqual(app.buttons["cadence-quarterly"].value as? String, "Selected")
+        XCTAssertEqual(app.buttons["priority-high"].value as? String, "Selected")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Reach-out settings"; screenshot.lifetime = .keepAlways; add(screenshot)
+    }
+
+    @MainActor
     func testNodeDragPanAndZoom() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview-graph", "--reset-explorer-preferences", "--reduce-motion"]

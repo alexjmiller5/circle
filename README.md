@@ -5,7 +5,10 @@ A native iOS and macOS app for exploring your people and staying in touch.
 The current native explorer has three layouts: **Constellation**, **Pathways**
 and **Orbits**. Search for a person, focus a group, follow recorded introductions,
 return to a previous selection, pan, pinch or use zoom buttons, and drag nodes.
-Display preferences persist locally. Reduced Motion is respected.
+Display preferences persist locally. Reduced Motion is respected. Track people
+locally for the reach-out list, set separate contact and hangout cadences,
+priority, qualifying interactions, reminder preferences and snooze. Unknown
+history stays explicit. Preview preferences are isolated from connected data.
 
 Normal launch shows an unconnected state. **Live People sync, contact-history
 priorities and notifications are not connected yet.** The development preview
@@ -41,13 +44,16 @@ device; no service credential or iCloud sync is bundled in this milestone.
 
 ## Call history utility
 
-An existing read-only macOS SQLite utility is available via `just calls`.
+The read-only macOS SQLite utility is available via `just calls` and as an
+installable `circle-calls` package (`nix build .#circle-calls`).
 See [its usage and Full Disk Access requirements](scripts/README.md).
 Its output contains private contact metadata and must stay outside git.
 
 ## Verification
 
-Pure Swift tests cover relationship direction, overlapping groups, unknown
+Pure Swift tests cover contact qualification, calendar cadence, incomplete
+history, retractions, preference isolation, relationship direction, overlapping groups, unknown
 locations, focus restoration, cyclic/disconnected graphs, 1,500-person layouts,
 validated preferences and camera bounds. UI tests cover normal/preview launch,
-search, layouts, back navigation, city modes, preference restoration and gestures.
+search, layouts, back navigation, city modes, preference restoration, tracking,
+reach-out settings and gestures on macOS and iOS.

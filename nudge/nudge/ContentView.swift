@@ -23,6 +23,12 @@ struct ExplorerView: View {
     let graph: SocialGraph
     @State private var state: ExplorerState
     @State private var query = ""
+    @State private var trackedIDs: Set<String>
+    private let tracking: TrackingPreferencesStore
+    @State private var reachOutPreferences: [String: ReachOutPreferences]
+    @State private var settingsError: String?
+    @State private var showReachOut = false
+    private let reachOutStore: ReachOutPreferencesStore
     @FocusState private var searchFocused: Bool
     @State private var centerRequest = 0
     @State private var positions: [String: GraphPoint]
@@ -33,8 +39,20 @@ struct ExplorerView: View {
         self.graph = graph
         let preferences = UserDefaults.standard
         self.preferences = preferences
+        let tracking = TrackingPreferencesStore(defaults: preferences, profile: "preview")
+        self.tracking = tracking
+        let reachOutStore = ReachOutPreferencesStore(defaults: preferences, profile: "preview")
+        self.reachOutStore = reachOutStore
         if ProcessInfo.processInfo.arguments.contains("--reset-explorer-preferences") {
             preferences.removeObject(forKey: preferenceKey)
+            tracking.save([])
+            try? reachOutStore.save([:])
+        }
+        _trackedIDs = State(initialValue: tracking.load())
+        do { _reachOutPreferences = State(initialValue: try reachOutStore.load()) }
+        catch {
+            _reachOutPreferences = State(initialValue: [:])
+            _settingsError = State(initialValue: "Saved preferences could not be read. Editing is paused to preserve them.")
         }
         var initial = ExplorerState(selfID: graph.selfID)
         ExplorerPreferences(values: preferences.dictionary(forKey: preferenceKey) ?? [:]).apply(to: &initial)
@@ -62,12 +80,12 @@ struct ExplorerView: View {
                         HStack(alignment: .top, spacing: 0) {
                             graphColumn.frame(maxWidth: .infinity)
                             Divider()
-                            GraphDetails(graph: graph, state: state, select: select).frame(width: 248)
+                            GraphDetails(graph: graph, state: state, trackedIDs: $trackedIDs, select: select).frame(width: 248)
                         }
                     } else {
                         graphColumn
                         Divider()
-                        GraphDetails(graph: graph, state: state, select: select)
+                        GraphDetails(graph: graph, state: state, trackedIDs: $trackedIDs, select: select)
                     }
                     HStack {
                         Toggle("Spring motion", isOn: $state.motion).fixedSize()
@@ -81,6 +99,15 @@ struct ExplorerView: View {
         }
         .background(GraphTheme.surface)
         .tint(GraphTheme.accent)
+        .sheet(isPresented: $showReachOut) {
+            ReachOutView(graph: graph, trackedIDs: trackedIDs, preferences: $reachOutPreferences, settingsError: settingsError)
+        }
+        .onChange(of: reachOutPreferences) { _, values in
+            guard settingsError == nil else { return }
+            do { try reachOutStore.save(values) }
+            catch { settingsError = "Preferences could not be saved." }
+        }
+        .onChange(of: trackedIDs) { _, ids in tracking.save(ids) }
         .onChange(of: state) { old, new in
             preferences.set(ExplorerPreferences(state: new).values, forKey: preferenceKey)
             if old.layout != new.layout || old.grouping != new.grouping || old.location != new.location ||
@@ -95,6 +122,7 @@ struct ExplorerView: View {
             HStack {
                 Text("Circle").font(.system(.title3, design: .rounded).weight(.semibold))
                 Spacer()
+                Button("Reach out") { showReachOut = true }.buttonStyle(.bordered)
                 Text("Synthetic preview").font(.caption).foregroundStyle(.secondary)
             }
             Text("Your people").font(.system(.largeTitle, design: .rounded).weight(.semibold))
@@ -111,6 +139,17 @@ struct ExplorerView: View {
                         ForEach(matches) { person in
                             Button(person.name) { select(.person(person.id)); query = "" }
                                 .accessibilityIdentifier("search-\(person.id)")
+                        }
+                    }.buttonStyle(.bordered)
+                }
+            }
+            if !trackedIDs.isEmpty {
+                Text("Tracked people").font(.caption).foregroundStyle(.secondary)
+                ScrollView(.horizontal) {
+                    HStack {
+                        ForEach(graph.people.filter { trackedIDs.contains($0.id) }) { person in
+                            Button(person.name) { select(.person(person.id)) }
+                                .accessibilityIdentifier("tracked-\(person.id)")
                         }
                     }.buttonStyle(.bordered)
                 }

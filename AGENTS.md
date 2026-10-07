@@ -3,7 +3,9 @@
 Native SwiftUI iOS and macOS relationship explorer. The explorer supports
 Constellation, Pathways and Orbits with search, focus history, group selection,
 base/current city distinctions, pan, zoom, node dragging and saved display
-preferences. Normal launch is unconnected; `--preview-graph` explicitly opens
+preferences. Circle-local tracking and per-person reach-out settings persist
+by profile. Reach-out history remains explicitly incomplete until verified
+evidence is connected; reminder preferences do not claim active delivery. Normal launch is unconnected; `--preview-graph` explicitly opens
 synthetic data. Live People enrollment, contact-history integration and alerts
 are not implemented. Never imply that preview data is live.
 
@@ -32,7 +34,10 @@ outside cloud-synced folders. UI automation permissions are native user state.
 - `nudge/nudge/`: native views and explicit synthetic development fixture.
 - `GraphTests/`: Swift Testing, including large graphs and invalid preferences.
 - `nudge/nudgeUITests/`: real native interactions through XCTest.
-- `scripts/call_log.py`, `tests/`: standalone read-only call-reader and fixtures.
+- `scripts/call_log.py`, `tests/`: read-only call reader, scoped event identity,
+  observed coverage and synthetic SQLite/WAL fixtures. `flake.nix` packages
+  `circle-calls` without requiring a checkout at runtime. Unknown source flags
+  stay unknown; local inventory is not proof of complete history.
 
 Keep canonical identity and recorded direction. Shared circles never imply
 friendship. Base city is not current presence. Unknown is explicit. Views

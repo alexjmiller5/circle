@@ -3,6 +3,7 @@ import SwiftUI
 struct GraphDetails: View {
     let graph: SocialGraph
     let state: ExplorerState
+    @Binding var trackedIDs: Set<String>
     let select: (GraphFocus) -> Void
 
     var body: some View {
@@ -14,6 +15,15 @@ struct GraphDetails: View {
                     Text(person.name).font(.system(.title2, design: .rounded).weight(.semibold))
                     Text(person.circles.isEmpty ? "No circles recorded" : person.circles.joined(separator: " · "))
                         .font(.subheadline).foregroundStyle(.secondary)
+                    if id != graph.selfID {
+                        Button(trackedIDs.contains(id) ? "Stop tracking" : "Track for reach-out") {
+                            if trackedIDs.contains(id) { trackedIDs.remove(id) } else { trackedIDs.insert(id) }
+                        }.buttonStyle(.bordered)
+                            .accessibilityIdentifier("tracking-\(id)")
+                            .accessibilityValue(trackedIDs.contains(id) ? "Tracked" : "Not tracked")
+                        Text("Saved in Circle. Nearby alerts include everyone with a fresh location.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     Divider()
                     location("Based in", value: person.baseCity)
                     location("Currently in", value: person.currentCity)
