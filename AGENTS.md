@@ -25,6 +25,12 @@ packages. Deployment targets: iOS 17 and macOS 14. Development bundle ID:
 - `just run`: launch unconnected Mac app.
 - `just calls --help`: existing call-history CLI.
 
+Secure Mac enrollment needs a matching Developer ID identity and Mac profile,
+embedded at `Contents/embedded.provisionprofile`, authorizing the app's private
+Keychain group. Ad hoc Mac signing is for preview/UI checks. Sign embedded Debug
+libraries with the same identity, remove test exceptions from the normal app,
+and use a disposable signing keychain. No plaintext credential fallback.
+
 Set `CIRCLE_DESTINATION` to an explicit available iOS Simulator destination
 for build/UI tests. `CIRCLE_DERIVED_DATA` overrides the cache location; keep it
 outside cloud-synced folders. UI automation permissions are native user state.

@@ -45,6 +45,21 @@ Secure enrollment needs a correctly signed build and the device's unlocked
 Keychain. Replacement devices enroll independently; credentials are never
 exported or recovered from another app. No iCloud sync is bundled.
 
+## Local Mac signing
+
+Ad hoc Mac builds support the preview and UI checks. Secure People enrollment
+also requires a valid Mac provisioning profile and a matching Developer ID
+Application identity. An iPhone profile cannot authorize this Mac Keychain.
+Embed the Mac profile at `Contents/embedded.provisionprofile`, claim only this
+app's identifier, team and private default Keychain group, and keep sandboxing
+and outgoing network access enabled. Use a disposable signing keychain.
+
+When signing a Debug artifact, sign its embedded debug libraries with the same
+identity before signing the app. Remove UI-test exceptions from the normal app.
+Verify the signature, certificate/profile match and exact entitlements before
+launching it. This local check does not notarize, release or deploy the app.
+Never replace native Keychain storage with a plaintext credential file.
+
 ## Connect People
 
 Enter your Life Data service's HTTPS origin and choose **Connect to People**.
