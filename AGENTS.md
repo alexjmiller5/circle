@@ -9,6 +9,11 @@ evidence is connected; reminder preferences do not claim active delivery. Normal
 explicitly opens synthetic data. The read-only contact metadata engine checks full authorized participant pages,
 completed imports, coverage totals and matching rereads. Its results remain
 provisional, with reminders disabled until reconciliation cost is measured.
+City-only visit logic requires two fresh checks at least five minutes apart
+for arrival and departure, and emits once per confirmed visit. It persists
+per person/profile; unknown or paused readings never prove departure. Source
+freshness has no default until collector cadence is measured. This logic is
+not connected to a live feed or notification delivery.
 Contact-history enrollment and UI integration, current presence, photos and
 notification delivery are not implemented. Never imply preview data
 is live.

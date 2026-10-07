@@ -105,6 +105,16 @@ and resolved identity qualify. Automatic reminders remain disabled for these
 provisional results. History enrollment and live UI integration are pending the
 upstream feed; the existing People connection grants no communication reads.
 
+## City-only arrival confirmation
+
+The prepared visit engine confirms arrival after two fresh source checks at
+least five minutes apart and alerts once per visit. Confirmed departure also
+requires two fresh checks before a later visit can alert. Missing, stale or
+paused readings cannot prove departure. Saved device/profile state prevents a
+restart from repeating an alert. Collection time is not a measured location
+fix. Live source enrollment, measured freshness policy, area matching and
+notification delivery remain unconnected.
+
 ## Call history utility
 
 The read-only macOS SQLite utility is available via `just calls` and as an
