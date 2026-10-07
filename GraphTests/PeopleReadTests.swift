@@ -51,3 +51,33 @@ private func reply(_ json: String, status: Int = 200) -> CircleHTTPReply {
         await #expect(throws: (any Error).self) { try await reader.read(table) }
     }
 }
+
+@Test func projectedEqualityReadUsesOnlyGrantedColumnsOnEveryPage() async throws {
+    let fixture = ReadFixture([
+        reply(#"{"rows":[{"id":"a","person_ref":"person-1"}],"next_cursor":"a"}"#),
+        reply(#"{"rows":[{"id":"b","person_ref":"person-1"}],"next_cursor":null}"#)
+    ])
+    let table = CircleProjectionTable(table: "participants", fields: ["id":"id", "person":"person_ref"])
+    let rows = try await CirclePeopleReader(client: fixture).read(table, where: ["person_ref":"person-1"])
+    #expect(try table.rows(rows).count == 2)
+    for data in await fixture.bodies {
+        let request = try JSONSerialization.jsonObject(with: data!) as! [String: Any]
+        #expect(request["where"] as? [String:String] == ["person_ref":"person-1"])
+        #expect(request["since"] == nil)
+    }
+    let before = await fixture.bodies.count
+    await #expect(throws: (any Error).self) {
+        try await CirclePeopleReader(client: fixture).read(table, where: ["ungranted":"person-1"])
+    }
+    #expect(await fixture.bodies.count == before)
+}
+
+@Test func projectedEqualityReadRejectsRowsOutsideTheRequestedPerson() async throws {
+    let fixture = ReadFixture([
+        reply(#"{"rows":[{"id":"a","person_ref":"person-2"}],"next_cursor":null}"#)
+    ])
+    let table = CircleProjectionTable(table: "participants", fields: ["id":"id", "person":"person_ref"])
+    await #expect(throws: (any Error).self) {
+        try await CirclePeopleReader(client: fixture).read(table, where: ["person_ref":"person-1"])
+    }
+}
