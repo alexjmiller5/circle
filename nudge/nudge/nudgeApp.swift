@@ -1,32 +1,11 @@
-//
-//  nudgeApp.swift
-//  nudge
-//
-//  Created by Alex Miller on 7/21/25.
-//
-
 import SwiftUI
-import SwiftData
 
 @main
-struct nudgeApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
-
+struct CircleApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(preview: ProcessInfo.processInfo.arguments.contains("--preview-graph"))
         }
-        .modelContainer(sharedModelContainer)
+        .defaultSize(width: 1100, height: 840)
     }
 }

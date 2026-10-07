@@ -71,3 +71,7 @@ Circle.xcodeproj/
 
 # Contact exports are private state, never fixtures or source.
 *.csv
+
+# Python verification caches
+__pycache__/
+.pytest_cache/

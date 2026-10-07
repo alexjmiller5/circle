@@ -31,10 +31,10 @@ Interfaces: `SocialGraph`, `ExplorerState`, `GraphPositions.make(graph:state:)` 
 Files: `nudge/nudge/ContentView.swift`, `GraphCanvas.swift`, `GraphDetails.swift`, `nudgeApp.swift`, `PreviewGraph.swift`, `project.yml`, `justfile`.
 Consumes Task 1 graph/state/positions. Produces native controls and graph canvas with accessible person/group actions.
 
-- [ ] Add UI flow tests before views: normal launch has no mock data; explicit preview supports selection, layout change, Back/Back to me, search and location mode.
-- [ ] Implement native views, explicitly gated synthetic preview and empty launch.
-- [ ] Generate Circle iOS/macOS project; build and run relevant tests on both destinations.
-- [ ] Exercise real gestures and controls; capture narrow phone and Mac evidence, including reduced motion.
-- [ ] Update README/AGENTS with actual supported state and commands, run existing Python tests, review diff, commit and push.
+- [x] Add UI flow tests before views: normal launch has no mock data; explicit preview supports selection, layout change, Back/Back to me, search and location mode.
+- [x] Implement native views, explicitly gated synthetic preview and empty launch.
+- [x] Generate Circle iOS/macOS project; build and run relevant tests on both destinations.
+- [x] Exercise real gestures and controls; capture narrow phone and Mac evidence, including reduced motion.
+- [x] Update README/AGENTS with actual supported state and commands, run existing Python tests, review diff, commit and push.
 
 Approval is already supplied for this milestone. Execute inline without reopening design approval. Any unsupported live-service or deployment step remains outside this plan.

@@ -3,6 +3,8 @@
 Approved design: the three-layout explorer. SwiftUI on iOS and macOS, with no web view.
 
 - The explorer shall offer Constellation, Pathways and Orbits while preserving selected people/groups.
+- First launch shall use Constellation, Circles, and boundaries off. Validated display preferences shall persist locally.
+- Re-selecting the current focus or using Back to me shall recenter after a pan, even when selection has not changed.
 - When a person or group is selected, the camera shall center that selection. Back restores the previous selection and modes; Back to me centers the configured self identity.
 - Constellation shall group by recorded connections, circles or city. City shall distinguish base from current presence and show Unknown explicitly.
 - Pathways shall retain recorded introducer direction when focus changes. Circle membership shall not invent friendship edges.

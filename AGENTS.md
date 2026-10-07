@@ -1,56 +1,44 @@
-# AGENTS.md
+# Circle
 
-Guidance for coding agents working in this repository.
+Native SwiftUI iOS and macOS relationship explorer. The explorer supports
+Constellation, Pathways and Orbits with search, focus history, group selection,
+base/current city distinctions, pan, zoom, node dragging and saved display
+preferences. Normal launch is unconnected; `--preview-graph` explicitly opens
+synthetic data. Live People enrollment, contact-history integration and alerts
+are not implemented. Never imply that preview data is live.
 
-## Project Overview
+## Build and verification
 
-Nudge (working title for "Circle") is a macOS app that helps users maintain relationships by tracking communication history and suggesting when to reach out. Early-stage project — currently a scaffolded Xcode template with SwiftUI + SwiftData.
+`project.yml` is the source of truth. XcodeGen produces the ignored
+`Circle.xcodeproj`. Requires Xcode and XcodeGen on macOS. No external Swift
+packages. Deployment targets: iOS 17 and macOS 14. Development bundle ID:
+`com.example.circle`; signing and distribution are separate work.
 
-## Build & Test Commands
+- `just gen`: regenerate the Xcode project.
+- `just check`: locally signed native build; no installation or deployment.
+- `just test`: pure Swift graph/state tests and Python call-reader tests.
+- `just test-ui`: XCUITest flows on `CIRCLE_DESTINATION` (default macOS).
+- `just run --preview-graph`: launch synthetic Mac preview.
+- `just run`: launch unconnected Mac app.
+- `just calls --help`: existing call-history CLI.
 
-This is an Xcode project. All build/test commands use `xcodebuild` from the `nudge/` subdirectory (where the `.xcodeproj` lives):
+Set `CIRCLE_DESTINATION` to an explicit available iOS Simulator destination
+for build/UI tests. `CIRCLE_DERIVED_DATA` overrides the cache location; keep it
+outside cloud-synced folders. UI automation permissions are native user state.
 
-```bash
-# Build
-xcodebuild -project nudge/nudge.xcodeproj -scheme nudge -configuration Debug build
+## Source map
 
-# Run unit tests
-xcodebuild -project nudge/nudge.xcodeproj -scheme nudge -configuration Debug test
+- `nudge/nudge/Graph/`: Foundation-only values, layouts, camera and preferences.
+- `nudge/nudge/`: native views and explicit synthetic development fixture.
+- `GraphTests/`: Swift Testing, including large graphs and invalid preferences.
+- `nudge/nudgeUITests/`: real native interactions through XCTest.
+- `scripts/call_log.py`, `tests/`: standalone read-only call-reader and fixtures.
 
-# Run a single test
-xcodebuild -project nudge/nudge.xcodeproj -scheme nudge -configuration Debug test -only-testing:nudgeTests/nudgeTests/testExample
-```
+Keep canonical identity and recorded direction. Shared circles never imply
+friendship. Base city is not current presence. Unknown is explicit. Views
+cache layout positions; no all-pairs force layout per animation frame.
 
-Note: This environment is Linux (Raspberry Pi), so `xcodebuild` is not available here. The project must be built on macOS with Xcode 16.4+.
-
-## Architecture
-
-- **Language:** Swift 5, SwiftUI, SwiftData
-- **Deployment target:** macOS 14.0+
-- **Xcode project:** `nudge/nudge.xcodeproj`
-- **Bundle ID:** `com.alexjmiller5.nudge`
-
-### Key directories
-
-- `nudge/nudge/` — App source (SwiftUI views, SwiftData models, entitlements)
-- `nudge/nudgeTests/` — Unit tests (Swift Testing framework via `import Testing`)
-- `nudge/nudgeUITests/` — UI tests (XCTest framework)
-
-### Data layer
-
-- **SwiftData** is the persistence framework. Models use `@Model` macro. The `ModelContainer` is configured in `nudgeApp.swift` and injected via `.modelContainer()`.
-- The app has iCloud/CloudKit entitlements for future sync support.
-- Call history data comes from the macOS SQLite database at `~/Library/Application Support/CallHistoryDB/CallHistory.storedata`. CSV exports of this data exist at the repo root (`test*.csv`) for development/analysis.
-
-### Testing
-
-- Unit tests use Swift Testing (`@Test`, `#expect`) — not XCTest.
-- UI tests use XCTest (`XCUIApplication`).
-
-## External Documentation
-
-Feature ideas and project planning live in Notion (linked in README.md).
-
-## Designs
-
-Browser mockups and their screenshots live in `designs/` (`preview/explorer.html` is the approved three-layout explorer). The folder is git-ignored because it also holds raw Notion task snapshots.
+All personal records, credentials, transcripts, contact exports and raw task
+snapshots stay outside git. Ignored `designs/` may contain private snapshots;
+never force-add it. Build/test artifacts are ignored scratch. Synthetic
+preview preferences use a separate key from any future connected profile.

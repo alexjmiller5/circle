@@ -39,9 +39,9 @@ private func fixture() -> SocialGraph {
     var state = ExplorerState(selfID: graph.selfID)
     state.select(.person("p1"))
     state.layout = .pathways
-    state.select(.group("Group B"))
+    state.select(.group("circle:value:Group B"))
     state.layout = .orbits
-    #expect(state.focus == .group("Group B"))
+    #expect(state.focus == .group("circle:value:Group B"))
     #expect(state.orbitAnchor == "p1")
     state.back()
     #expect(state.focus == .person("p1"))
@@ -73,7 +73,7 @@ private func fixture() -> SocialGraph {
     #expect(original == GraphPositions.make(graph: graph, state: state))
     state.layout = .orbits
     let orbit = GraphPositions.make(graph: graph, state: state)
-    state.select(.group("Group A"))
+    state.select(.group("circle:value:Group A"))
     #expect(orbit == GraphPositions.make(graph: graph, state: state))
 }
 
