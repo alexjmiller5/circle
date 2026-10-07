@@ -117,3 +117,87 @@ struct ReachOutPreferencesStore {
         defaults.set(try JSONEncoder().encode(preferences), forKey: key)
     }
 }
+
+/// Metadata from a completed, reconciled read. Import completion describes
+/// publication, never historical endpoint coverage or account-wide history.
+struct ContactImportMetadata: Equatable, Sendable {
+    var id: String
+    var sourceNamespace: String
+    var completed: Bool
+    var deleted = false
+}
+
+struct ContactParticipantMetadata: Equatable, Sendable {
+    var id: String
+    var eventID: String
+    var firstImportID: String
+    var role: String
+    var isSelf: Bool
+    var personID: String?
+    var deleted = false
+}
+
+struct ContactEventMetadata: Equatable, Sendable {
+    var id: String
+    var firstImportID: String
+    var occurredAt: Date?
+    var kind: String
+    var direction: String
+    var messageState: String?
+    var conversationKind: String
+    var expectedParticipantRows: Int
+    var participantCoverage: String
+    var participantCoverageReason: String
+    var callOutcome: String?
+    var durationSeconds: Double?
+    var needsReview = false
+    var deleted = false
+}
+
+enum ContactMetadataProjection {
+    /// The caller must supply ALL participant rows, including self, unresolved
+    /// and tombstoned rows. Matching separate rereads are best-known evidence,
+    /// not an atomic snapshot; automatic reminders remain gated independently.
+    static func interactions(event: ContactEventMetadata, participants: [ContactParticipantMetadata],
+                             imports: [ContactImportMetadata]) throws -> [ContactInteraction] {
+        var unique: [String: ContactParticipantMetadata] = [:]
+        for row in participants {
+            guard !row.id.isEmpty, row.eventID == event.id else { throw CircleConnectionError.invalidResponse }
+            if let previous = unique[row.id], previous != row { throw CircleConnectionError.invalidResponse }
+            unique[row.id] = row
+        }
+        var receipts: [String: ContactImportMetadata] = [:]
+        for row in imports {
+            guard !row.id.isEmpty, !row.sourceNamespace.isEmpty else { throw CircleConnectionError.invalidResponse }
+            if let previous = receipts[row.id], previous != row { throw CircleConnectionError.invalidResponse }
+            receipts[row.id] = row
+        }
+        let active = unique.values.filter { !$0.deleted }
+        let referenced = [event.firstImportID] + active.map(\.firstImportID)
+        guard !event.id.isEmpty, !event.deleted, !event.needsReview,
+              let occurredAt = event.occurredAt, occurredAt.timeIntervalSince1970.isFinite,
+              event.conversationKind == "direct", event.participantCoverage == "complete_for_event",
+              event.participantCoverageReason == "verified_event_endpoints",
+              event.expectedParticipantRows == active.count, active.count == 2,
+              referenced.allSatisfy({ receipts[$0]?.completed == true && receipts[$0]?.deleted == false }),
+              Set(referenced.compactMap { receipts[$0]?.sourceNamespace }).count == 1,
+              let own = active.first(where: \.isSelf), let other = active.first(where: { !$0.isSelf }),
+              let personID = other.personID, !personID.isEmpty, own.personID != personID else { return [] }
+        let ownRole: String, otherRole: String, kind: ContactInteractionKind
+        switch (event.kind, event.direction) {
+        case ("message", "outgoing") where event.messageState == "sent" && event.callOutcome == nil && event.durationSeconds == nil:
+            (ownRole, otherRole, kind) = ("sender", "recipient", .outgoingMessage)
+        case ("message", "incoming") where event.messageState == "received" && event.callOutcome == nil && event.durationSeconds == nil:
+            (ownRole, otherRole, kind) = ("recipient", "sender", .incomingMessage)
+        case ("call", "outgoing") where event.callOutcome == "answered" && event.messageState == nil:
+            (ownRole, otherRole, kind) = ("caller", "callee", .answeredCall)
+        case ("call", "incoming") where event.callOutcome == "answered" && event.messageState == nil:
+            (ownRole, otherRole, kind) = ("callee", "caller", .answeredCall)
+        default: return []
+        }
+        guard own.role == ownRole, other.role == otherRole,
+              event.durationSeconds.map({ $0.isFinite && $0 >= 0 }) ?? true else { return [] }
+        return [ContactInteraction(id: event.id, personID: personID, occurredAt: occurredAt, kind: kind,
+                                   verified: true, direct: true, participantsComplete: true, identityResolved: true)]
+    }
+}

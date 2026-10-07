@@ -6,8 +6,11 @@ base/current city distinctions, pan, zoom, node dragging and saved display
 preferences. Circle-local tracking and per-person reach-out settings persist
 by profile. Reach-out history remains explicitly incomplete until verified
 evidence is connected; reminder preferences do not claim active delivery. Normal launch offers native read-only People enrollment; `--preview-graph`
-explicitly opens synthetic data. Contact-history integration, current presence,
-photos and notification delivery are not implemented. Never imply preview data
+explicitly opens synthetic data. The read-only contact metadata engine checks full authorized participant pages,
+completed imports, coverage totals and matching rereads. Its results remain
+provisional, with reminders disabled until reconciliation cost is measured.
+Contact-history enrollment and UI integration, current presence, photos and
+notification delivery are not implemented. Never imply preview data
 is live.
 
 ## Build and verification

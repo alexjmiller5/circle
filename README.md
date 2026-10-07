@@ -93,6 +93,18 @@ from the script's pinned clean Life Data revision with `--source <checkout>`;
 networking and secure storage remain native. Synthetic fixtures never contact
 or modify the real service.
 
+## Contact metadata reader
+
+The read-only engine supports the service-owned 57-column metadata contract.
+It completes all authorized pages, checks import publication and coverage,
+retains self and unresolved participants, and rereads the same dependencies.
+Observed changes or failed dependencies retract the result to pending. Matching
+reads are provisional, not an atomic snapshot or proof of complete history.
+Only source-proven direct messages and answered calls with verified endpoints
+and resolved identity qualify. Automatic reminders remain disabled for these
+provisional results. History enrollment and live UI integration are pending the
+upstream feed; the existing People connection grants no communication reads.
+
 ## Call history utility
 
 The read-only macOS SQLite utility is available via `just calls` and as an
