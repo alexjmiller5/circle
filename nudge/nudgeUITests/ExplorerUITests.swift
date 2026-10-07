@@ -39,6 +39,31 @@ final class ExplorerUITests: XCTestCase {
     }
 
     @MainActor
+    func testOptInLiveEnrollmentAndRecovery() throws {
+        guard let endpoint = ProcessInfo.processInfo.environment["CIRCLE_LIVE_ENDPOINT"] else {
+            throw XCTSkip("Live enrollment requires an explicit service endpoint")
+        }
+        let app = XCUIApplication()
+        app.launch()
+        let field = app.textFields["Service URL"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.clickOrTap()
+        field.typeText(endpoint)
+        app.buttons["Connect to People"].clickOrTap()
+        let approval = app.links["Approve read-only access"]
+        XCTAssertTrue(approval.waitForExistence(timeout: 10))
+        print("CIRCLE_APPROVAL_URL=\(approval.value as? String ?? "missing")")
+        XCTAssertTrue(app.buttons["Refresh"].waitForExistence(timeout: 270))
+        XCTAssertTrue(app.textFields["Find a person"].exists)
+        XCTAssertFalse(app.staticTexts["connection-error"].exists)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["Refresh"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.textFields["Find a person"].exists)
+        XCTAssertFalse(app.staticTexts["Synthetic preview"].exists)
+    }
+
+    @MainActor
     func testExplorerFocusLayoutsSearchAndBack() {
         let app = testApp()
         app.launchArguments = ["--preview-graph", "--reset-explorer-preferences"]

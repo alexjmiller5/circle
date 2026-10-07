@@ -78,7 +78,7 @@ struct ConnectedCircleView: View {
                 Text("Circle requests names, circles, recorded relationships and residence history. Approval happens in your service; Circle never asks for an operator token.")
                     .font(.caption).foregroundStyle(.secondary)
                 if let url = model.approvalURL {
-                    Link("Approve read-only access", destination: url)
+                    Link("Approve read-only access", destination: url).accessibilityValue(url.absoluteString)
                     if let code = model.approvalCode { Text("Approval code: \(code)").textSelection(.enabled) }
                     Text("Waiting for your approval…").font(.caption)
                     Button("Cancel connection") {
