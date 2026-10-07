@@ -113,7 +113,10 @@ requires two fresh checks before a later visit can alert. Missing, stale or
 paused readings cannot prove departure. Saved device/profile state prevents a
 restart from repeating an alert. Collection time is not a measured location
 fix. Live source enrollment, measured freshness policy, area matching and
-notification delivery remain unconnected.
+notification delivery remain unconnected. The prepared stream reader supports
+the service's bounded original-body pages with opaque cursor encoding and
+exact read-only enrollment checks. It creates no profile or credential and
+does not treat a whole-stream append as a latest-per-person position.
 
 ## Call history utility
 

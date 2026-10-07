@@ -75,6 +75,12 @@ photos or streams follow from that grant. Each device enrolls its own credential
 and keeps it in native Keychain storage. Service rotation/revision changes
 require explicit reenrollment, never a wider fallback.
 
+The bundled policy supports exact stream enrollment separately from People
+access. `CircleStreamReader` reads one bounded original-body page, preserving
+opaque cursors and rejecting duplicate IDs; it makes no current-presence or
+full-coverage claim. Only stream records accept bounded query parameters. No
+stream enrollment UI or live credential is connected.
+
 Use canonical Life Core policy via the pinned bundled JavaScript resource;
 `scripts/bundle_life_core.py` rebuilds it. Never duplicate its validation policy
 in Swift. Publish only complete validated reads. Failed refreshes preserve the

@@ -34,9 +34,28 @@ final class CircleHTTPTransport: CircleHTTPClient, @unchecked Sendable {
 
     deinit { session.invalidateAndCancel() }
 
+    private static func validQuery(_ path: String, route: String, method: String, body: Data?) -> Bool {
+        guard path.contains("?") else { return true }
+        guard method == "GET", body == nil,
+              route.range(of: #"^/v1/streams/[A-Za-z0-9_-]{1,64}/records$"#, options: .regularExpression) != nil,
+              let parts = URLComponents(string: path), parts.percentEncodedPath == route,
+              let items = parts.queryItems, !items.isEmpty,
+              Set(items.map(\.name)).count == items.count else { return false }
+        return items.allSatisfy { item in
+            guard let value = item.value else { return false }
+            switch item.name {
+            case "limit": return (1...20).map(String.init).contains(value)
+            case "cursor": return CircleStreamReader.validCursor(value)
+            default: return false
+            }
+        }
+    }
+
     func request(path: String, method: String, body: Data?, maxBytes: Int) async throws -> CircleHTTPReply {
-        guard path.hasPrefix("/v1/"), !path.contains("?"), !path.contains("#"), !path.contains("%"),
-              !path.contains(".."), !path.contains("\\"), !path.contains("//"),
+        let route = String(path.prefix { $0 != "?" })
+        guard route.hasPrefix("/v1/"), !path.contains("#"), !route.contains("%"),
+              !route.contains(".."), !path.contains("\\"), !route.contains("//"),
+              Self.validQuery(path, route: route, method: method, body: body),
               maxBytes > 0, maxBytes <= 2 * 1024 * 1024,
               ["GET", "POST"].contains(method), let url = URL(string: endpoint.absoluteString + path) else {
             throw CircleConnectionError.invalidConfiguration

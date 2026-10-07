@@ -32,3 +32,17 @@ import Testing
     let invalid = Data(#"{"version":1,"namespace":"circle.reader","bindings":{},"token":"forbidden"}"#.utf8)
     #expect(throws: (any Error).self) { try policy.canonicalConfig(invalid) }
 }
+
+@Test @MainActor func exactStreamEnrollmentRejectsAppendOtherStreamsAndEstateScopes() throws {
+    let policy = try CircleEnrollmentPolicy()
+    let fingerprint = String(repeating: "a", count: 64)
+    let profile = CircleReaderProfile(id: "circle-presence", scopes: ["streams:read:example_checks"])
+    var data: [String: Any] = ["name":"device:\(fingerprint)", "scopes":profile.scopes,
+        "enrollmentProfile":["id":profile.id,"revision":String(repeating:"b",count:64)],
+        "capabilities":["row_api":"v1","schema":"none","replica_sync":false]]
+    #expect(try policy.validateSession(data: JSONSerialization.data(withJSONObject: data), fingerprint: fingerprint, profile: profile).scopes == profile.scopes)
+    for scope in ["streams:append:example_checks", "streams:read:other_checks", "streams:read", "full"] {
+        data["scopes"] = [scope]
+        #expect(throws: (any Error).self) { try policy.validateSession(data: JSONSerialization.data(withJSONObject: data), fingerprint: fingerprint, profile: profile) }
+    }
+}

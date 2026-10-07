@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
-REVISION = "df15dd2c93a45f3517628ac500d9a9d768e60b69"
+REVISION = "142c889f6fc62f0bca1f49633a0647e123345310"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--source", required=True, type=Path, help="Clean Life Data source checkout")
 args = parser.parse_args()

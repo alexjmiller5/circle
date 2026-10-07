@@ -32,3 +32,15 @@ private final class HTTPStub: URLProtocol, @unchecked Sendable {
     await #expect(throws: (any Error).self) { try await transport.request(path: "/v1/session", method: "GET", body: nil, maxBytes: 1024) }
     await #expect(throws: (any Error).self) { try await transport.request(path: "https://elsewhere.invalid", method: "GET", body: nil, maxBytes: 4096) }
 }
+
+@Test func nativeTransportAllowsOnlyBoundedStreamPageQueries() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [HTTPStub.self]
+    let transport = try CircleHTTPTransport(endpoint: "https://example.invalid", token: "fixture-token", configuration: configuration)
+    let reply = try await transport.request(path: "/v1/streams/example_checks/records?limit=20&cursor=YWJj%2B%2F%3D", method: "GET", body: nil, maxBytes: 4096)
+    #expect(reply.status == 200)
+    for path in ["/v1/session?token=x", "/v1/streams/example_checks/append?limit=20", "/v1/streams/example_checks/records?limit=21", "/v1/streams/example_checks/records?limit=20&limit=1", "/v1/streams/example_checks/records?limit=20&token=x", "/v1/streams/example%2Fchecks/records?limit=20"] {
+        await #expect(throws: (any Error).self) { try await transport.request(path: path, method: "GET", body: nil, maxBytes: 4096) }
+    }
+    await #expect(throws: (any Error).self) { try await transport.request(path: "/v1/streams/example_checks/records?limit=20", method: "POST", body: nil, maxBytes: 4096) }
+}
