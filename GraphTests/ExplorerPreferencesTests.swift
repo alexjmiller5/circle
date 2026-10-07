@@ -35,3 +35,13 @@ import Testing
     camera.center(on: [])
     #expect(camera.center.x.isFinite)
 }
+
+@Test func zoomedOutGraphKeepsFocusReadableAndOtherPeopleAsOverviewDots() {
+    var camera = GraphCamera()
+    #expect(camera.showsName(selected: false))
+    camera.setZoom(0.25)
+    #expect(!camera.showsName(selected: false))
+    #expect(camera.showsName(selected: true))
+    camera.setZoom(1)
+    #expect(camera.showsName(selected: false))
+}

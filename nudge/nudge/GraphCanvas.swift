@@ -48,6 +48,7 @@ struct GraphCanvas: View {
                         if let point = screen[person.id], point.x >= 38, point.y >= 33,
                            point.x <= geometry.size.width - 38, point.y <= geometry.size.height - 33 {
                             GraphNode(person: person, selected: state.focus == .person(person.id),
+                                      showsName: camera.showsName(selected: state.focus == .person(person.id), magnification: magnification),
                                       color: personColor(person), select: { select(.person(person.id)) },
                                       move: { translation in
                                           guard var point = points[person.id] else { return }
@@ -56,6 +57,7 @@ struct GraphCanvas: View {
                                           moved[person.id] = point
                                       })
                                 .position(x: point.x, y: point.y)
+                                .zIndex(state.focus == .person(person.id) ? 1 : 0)
                         }
                     }
                 }
@@ -143,9 +145,12 @@ struct GraphCanvas: View {
 
     private func draw(edge: GraphEdge, from: CGPoint, to: CGPoint, context: inout GraphicsContext) {
         let distance = max(1, hypot(to.x - from.x, to.y - from.y))
+        let fromRadius = camera.showsName(selected: state.focus == .person(edge.from), magnification: magnification) ? 24.0 : 6.0
+        let toRadius = camera.showsName(selected: state.focus == .person(edge.to), magnification: magnification) ? 28.0 : 8.0
+        guard distance > fromRadius + toRadius else { return }
         let dx = (to.x - from.x) / distance, dy = (to.y - from.y) / distance
-        let start = CGPoint(x: from.x + dx * 24, y: from.y + dy * 24)
-        let end = CGPoint(x: to.x - dx * 28, y: to.y - dy * 28)
+        let start = CGPoint(x: from.x + dx * fromRadius, y: from.y + dy * fromRadius)
+        let end = CGPoint(x: to.x - dx * toRadius, y: to.y - dy * toRadius)
         var path = Path(); path.move(to: start); path.addLine(to: end)
         let active = state.focus == .person(edge.from) || state.focus == .person(edge.to)
         let color = active ? GraphTheme.accent.opacity(0.7) : Color.secondary.opacity(0.24)
@@ -163,6 +168,7 @@ struct GraphCanvas: View {
 private struct GraphNode: View {
     let person: GraphPerson
     let selected: Bool
+    let showsName: Bool
     let color: Color
     let select: () -> Void
     let move: (CGSize) -> Void
@@ -171,13 +177,17 @@ private struct GraphNode: View {
     var body: some View {
         Button(action: select) {
             VStack(spacing: 4) {
-                Text(person.name == "You" ? "You" : String(person.name.split(separator: " ").compactMap(\.first)))
-                    .font(.caption.weight(.semibold)).foregroundStyle(.primary)
-                    .frame(width: 42, height: 42)
-                    .background(color.opacity(0.18), in: Circle())
-                    .overlay(Circle().stroke(selected ? GraphTheme.accent : color.opacity(0.3), lineWidth: selected ? 2.5 : 1))
-                Text(person.name).font(.caption).lineLimit(1)
-            }.frame(width: 76, height: 66).contentShape(Rectangle())
+                if showsName {
+                    Text(person.name == "You" ? "You" : String(person.name.split(separator: " ").compactMap(\.first)))
+                        .font(.caption.weight(.semibold)).foregroundStyle(.primary)
+                        .frame(width: 42, height: 42)
+                        .background(color.opacity(0.18), in: Circle())
+                        .overlay(Circle().stroke(selected ? GraphTheme.accent : color.opacity(0.3), lineWidth: selected ? 2.5 : 1))
+                    Text(person.name).font(.caption).lineLimit(1)
+                } else {
+                    Circle().fill(color.opacity(0.6)).frame(width: 12, height: 12)
+                }
+            }.frame(width: showsName ? 76 : 44, height: showsName ? 66 : 44).contentShape(Rectangle())
         }.buttonStyle(.plain).offset(translation)
             .accessibilityLabel(person.name).accessibilityIdentifier("person-\(person.id)")
             .accessibilityValue(selected ? "Selected" : "")

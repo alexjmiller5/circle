@@ -144,6 +144,24 @@ final class ExplorerUITests: XCTestCase {
     }
 
     @MainActor
+    func testZoomedOutOverviewKeepsNamesAccessibleAndFocusReadable() {
+        let app = testApp()
+        app.launchArguments = ["--preview-graph", "--reset-explorer-preferences", "--reduce-motion"]
+        app.launch()
+        XCTAssertTrue(app.buttons["person-person-00"].waitForExistence(timeout: 5))
+        for _ in 0..<8 { app.buttons["Zoom out"].clickOrTap() }
+        let focused = app.buttons["person-person-00"]
+        let others = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier != %@", "person-", "person-person-00")).allElementsBoundByIndex
+        XCTAssertFalse(others.isEmpty)
+        for node in others {
+            XCTAssertFalse(node.label.isEmpty, "Overview dots retain their full accessible names")
+            XCTAssertLessThan(node.frame.height, focused.frame.height - 10)
+        }
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Readable overview"; shot.lifetime = .keepAlways; add(shot)
+    }
+
+    @MainActor
     func testNodeDragPanAndZoom() {
         let app = testApp()
         app.launchArguments = ["--preview-graph", "--reset-explorer-preferences", "--reduce-motion"]

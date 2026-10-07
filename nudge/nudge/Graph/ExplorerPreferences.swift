@@ -46,6 +46,9 @@ struct GraphCamera: Equatable {
     }
 
     mutating func setZoom(_ value: Double) { zoom = min(3, max(0.25, value)) }
+    func showsName(selected: Bool, magnification: Double = 1) -> Bool {
+        selected || zoom * magnification >= 0.75
+    }
     mutating func pan(x: Double, y: Double) {
         center.x -= x / zoom; center.y -= y / zoom
     }
