@@ -25,6 +25,7 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_APP_SANDBOX: YES
+        ENABLE_OUTGOING_NETWORK_CONNECTIONS: YES
         ENABLE_HARDENED_RUNTIME: YES
   CircleUITests:
     type: bundle.ui-testing

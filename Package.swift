@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: [.library(name: "CircleGraph", targets: ["CircleGraph"])],
     targets: [
-        .target(name: "CircleGraph", path: "nudge/nudge/Graph"),
+        .target(name: "CircleGraph", path: "nudge/nudge/Graph", resources: [.process("Resources")]),
         .testTarget(name: "CircleGraphTests", dependencies: ["CircleGraph"], path: "GraphTests")
     ]
 )

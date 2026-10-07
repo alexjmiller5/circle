@@ -25,7 +25,7 @@ struct GraphDetails: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Divider()
-                    location("Based in", value: person.baseCity)
+                    location("Based in", value: graph.city(of: person, mode: .base))
                     location("Currently in", value: person.currentCity)
                     Divider()
                     Text("Recorded connections").font(.subheadline.weight(.medium))

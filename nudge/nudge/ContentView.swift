@@ -7,14 +7,7 @@ struct ContentView: View {
         if preview {
             ExplorerView(graph: PreviewGraph.graph)
         } else {
-            VStack(spacing: 16) {
-                Text("Circle").font(.system(.largeTitle, design: .rounded).weight(.semibold))
-                Text("Your circle starts here").font(.title2)
-                Text("Your people and connections will appear here once a data source is connected.")
-                    .foregroundStyle(.secondary).multilineTextAlignment(.center)
-                Text("No data source connected").font(.callout).foregroundStyle(.secondary)
-            }
-            .padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
+            ConnectedCircleView()
         }
     }
 }
@@ -33,17 +26,20 @@ struct ExplorerView: View {
     @State private var centerRequest = 0
     @State private var positions: [String: GraphPoint]
     private let preferences: UserDefaults
-    private let preferenceKey = "explorer-preview-v1"
+    private let preferenceKey: String
+    private let isPreview: Bool
 
-    init(graph: SocialGraph) {
+    init(graph: SocialGraph, profile: String = "preview") {
+        self.preferenceKey = "explorer-" + profile + "-v1"
+        self.isPreview = profile == "preview"
         self.graph = graph
         let preferences = UserDefaults.standard
         self.preferences = preferences
-        let tracking = TrackingPreferencesStore(defaults: preferences, profile: "preview")
+        let tracking = TrackingPreferencesStore(defaults: preferences, profile: profile)
         self.tracking = tracking
-        let reachOutStore = ReachOutPreferencesStore(defaults: preferences, profile: "preview")
+        let reachOutStore = ReachOutPreferencesStore(defaults: preferences, profile: profile)
         self.reachOutStore = reachOutStore
-        if ProcessInfo.processInfo.arguments.contains("--reset-explorer-preferences") {
+        if isPreview && ProcessInfo.processInfo.arguments.contains("--reset-explorer-preferences") {
             preferences.removeObject(forKey: preferenceKey)
             tracking.save([])
             try? reachOutStore.save([:])
@@ -90,7 +86,7 @@ struct ExplorerView: View {
                     HStack {
                         Toggle("Spring motion", isOn: $state.motion).fixedSize()
                         Spacer()
-                        Text("Synthetic people and locations").foregroundStyle(.secondary)
+                        Text(isPreview ? "Synthetic people and locations" : "Recorded connections · presence not connected").foregroundStyle(.secondary)
                     }.font(.caption).padding(16)
                 }
                 .frame(maxWidth: 1400)
@@ -123,7 +119,7 @@ struct ExplorerView: View {
                 Text("Circle").font(.system(.title3, design: .rounded).weight(.semibold))
                 Spacer()
                 Button("Reach out") { showReachOut = true }.buttonStyle(.bordered)
-                Text("Synthetic preview").font(.caption).foregroundStyle(.secondary)
+                Text(isPreview ? "Synthetic preview" : "People").font(.caption).foregroundStyle(.secondary)
             }
             Text("Your people").font(.system(.largeTitle, design: .rounded).weight(.semibold))
             Text("\(graph.people.count) people · \(graph.groups(by: .circles, location: .base).count) circles")

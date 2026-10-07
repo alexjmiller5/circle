@@ -10,8 +10,10 @@ locally for the reach-out list, set separate contact and hangout cadences,
 priority, qualifying interactions, reminder preferences and snooze. Unknown
 history stays explicit. Preview preferences are isolated from connected data.
 
-Normal launch shows an unconnected state. **Live People sync, contact-history
-priorities and notifications are not connected yet.** The development preview
+Normal launch offers a read-only People connection through browser-approved
+Life Data enrollment. A complete refresh replaces the graph; failed refreshes
+preserve its private offline copy. **Contact-history priorities, current
+presence, photos and notification delivery are not connected yet.** The development preview
 contains only explicitly labeled synthetic people and locations. Shared circle
 membership does not imply friendship; residence and current presence are shown
 separately, with missing facts marked Unknown.
@@ -25,7 +27,7 @@ The app targets iOS 17 and macOS 14 or later.
 just test                    # graph logic and call-reader fixtures
 just check                   # Mac build
 just run --preview-graph     # synthetic Mac explorer
-just run                     # normal, unconnected launch
+just run                     # normal connection screen
 just test-ui                 # Mac UI tests
 CIRCLE_DESTINATION='platform=iOS Simulator,name=iPhone 17' just test-ui
 ```
@@ -39,8 +41,42 @@ which defaults to `~/Library/Developer/Xcode/DerivedData/Circle`.
 The development bundle ID is `com.example.circle`. These commands build local
 development artifacts; there is no release, signing enrollment or deployment
 workflow. XCUITest may request the Mac user's approval to enable UI Automation.
-An installed app will require supported service enrollment on each replacement
-device; no service credential or iCloud sync is bundled in this milestone.
+Secure enrollment needs a correctly signed build and the device's unlocked
+Keychain. Replacement devices enroll independently; credentials are never
+exported or recovered from another app. No iCloud sync is bundled.
+
+## Connect People
+
+Enter your Life Data service's HTTPS origin and choose **Connect to People**.
+Open the approval link and verify its code and read-only grants. Circle keeps
+its generated device credential in the native Keychain. The operator configures
+`circle-reader`; customers never enter table names or an operator token.
+
+The service-owned `circle.reader` configuration binds the logical people,
+relations and locations fields documented in `CirclePeopleBindings`. Its exact
+16 column grants cover identity, display name, circles, directed relationships,
+residence claims and tombstones. It grants no writes, file reads, messages,
+streams, schema or replica synchronization. Circle checks the canonical Life
+Core enrollment policy, exact grants and profile revision before reading.
+
+Choose **My person record** to anchor your graph without guessing identity.
+Tracking, cadence and graph preferences are local to the connected profile.
+Residence is separate from presence; conflicting current residence claims stay
+unknown. Same-named cities in different countries remain separate.
+
+The private graph cache lives in the app's Application Support directory with
+restricted file permissions. Cached presence is never reused. **Refresh** scans
+all authorized pages before publishing; independent table reads are not an
+atomic snapshot. **Disconnect and remove cached people** revokes the device
+credential and clears the offline graph. Unconfirmed revocation retains the
+credential for retry and displays the remaining action. A cancelled or expired
+unapproved link is not proof of server revocation; check service devices if it
+was approved afterward.
+
+The bundled pure policy is pinned by `scripts/bundle_life_core.py`. Rebuild it
+from the script's pinned clean Life Data revision with `--source <checkout>`;
+networking and secure storage remain native. Synthetic fixtures never contact
+or modify the real service.
 
 ## Call history utility
 

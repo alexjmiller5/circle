@@ -5,9 +5,10 @@ Constellation, Pathways and Orbits with search, focus history, group selection,
 base/current city distinctions, pan, zoom, node dragging and saved display
 preferences. Circle-local tracking and per-person reach-out settings persist
 by profile. Reach-out history remains explicitly incomplete until verified
-evidence is connected; reminder preferences do not claim active delivery. Normal launch is unconnected; `--preview-graph` explicitly opens
-synthetic data. Live People enrollment, contact-history integration and alerts
-are not implemented. Never imply that preview data is live.
+evidence is connected; reminder preferences do not claim active delivery. Normal launch offers native read-only People enrollment; `--preview-graph`
+explicitly opens synthetic data. Contact-history integration, current presence,
+photos and notification delivery are not implemented. Never imply preview data
+is live.
 
 ## Build and verification
 
@@ -30,7 +31,8 @@ outside cloud-synced folders. UI automation permissions are native user state.
 
 ## Source map
 
-- `nudge/nudge/Graph/`: Foundation-only values, layouts, camera and preferences.
+- `nudge/nudge/Graph/`: graph values, layouts, preferences, native enrollment, bounded HTTP reads,
+  secure Keychain storage and private cache.
 - `nudge/nudge/`: native views and explicit synthetic development fixture.
 - `GraphTests/`: Swift Testing, including large graphs and invalid preferences.
 - `nudge/nudgeUITests/`: real native interactions through XCTest.
@@ -46,4 +48,26 @@ cache layout positions; no all-pairs force layout per animation frame.
 All personal records, credentials, transcripts, contact exports and raw task
 snapshots stay outside git. Ignored `designs/` may contain private snapshots;
 never force-add it. Build/test artifacts are ignored scratch. Synthetic
-preview preferences use a separate key from any future connected profile.
+preview preferences use a separate key from connected profiles.
+
+## People service boundary
+
+Circle is a dedicated read-only Life Data consumer through its supported API.
+The service owns the `circle-reader` profile and `circle.reader` table/column
+bindings; personal schema and values never ship in this repo. The approved
+reader requires exactly the 16 projected columns modeled by
+`CirclePeopleBindings`. No broad token, schema pull, replica sync, writes,
+photos or streams follow from that grant. Each device enrolls its own credential
+and keeps it in native Keychain storage. Service rotation/revision changes
+require explicit reenrollment, never a wider fallback.
+
+Use canonical Life Core policy via the pinned bundled JavaScript resource;
+`scripts/bundle_life_core.py` rebuilds it. Never duplicate its validation policy
+in Swift. Publish only complete validated reads. Failed refreshes preserve the
+last graph and show an error; independent table pages are not a snapshot.
+Cache lives under Application Support with private permissions and never
+revives current presence. Disconnect clears it after confirmed revocation;
+401 alone is not proof an unapproved candidate cannot be approved later.
+
+Use `just gen`, which resolves XcodeGen's real binary so its bundled settings
+presets are found. Direct invocation through the Nix profile symlink omits them.

@@ -1,15 +1,16 @@
 import Foundation
 
-struct GraphPerson: Identifiable, Equatable, Sendable {
+struct GraphPerson: Identifiable, Equatable, Codable, Sendable {
     let id: String
     var name: String
     var circles: [String] = []
     var baseCity: String? = nil
+    var baseCountry: String? = nil
     // A future adapter must supply only presence accepted by the explicit freshness policy.
     var currentCity: String? = nil
 }
 
-struct GraphRelation: Equatable, Sendable {
+struct GraphRelation: Equatable, Codable, Sendable {
     let personID: String
     let relatedID: String
     let kind: String
@@ -87,7 +88,11 @@ struct SocialGraph: Sendable {
 
     func city(of person: GraphPerson, mode: LocationMode) -> String {
         let value = mode == .base ? person.baseCity : person.currentCity
-        return value.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } ?? "Unknown"
+        guard let city = value?.trimmingCharacters(in: .whitespacesAndNewlines), !city.isEmpty else { return "Unknown" }
+        if mode == .base, let country = person.baseCountry?.trimmingCharacters(in: .whitespacesAndNewlines), !country.isEmpty {
+            return city + ", " + country
+        }
+        return city
     }
 
     func groups(by grouping: GraphGrouping, location: LocationMode) -> [GraphGroup] {
@@ -107,7 +112,12 @@ struct SocialGraph: Sendable {
                 let value = (location == .base ? person.baseCity : person.currentCity)?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if let value, !value.isEmpty {
-                    entries = [("city:value:" + value, value)]
+                    if location == .base, let country = person.baseCountry?.trimmingCharacters(in: .whitespacesAndNewlines), !country.isEmpty {
+                        let key = String(data: try! JSONEncoder().encode([value, country]), encoding: .utf8)!
+                        entries = [("city:country:" + key, city(of: person, mode: location))]
+                    } else {
+                        entries = [("city:value:" + value, value)]
+                    }
                 } else {
                     entries = [("city:unknown", "Unknown")]
                 }

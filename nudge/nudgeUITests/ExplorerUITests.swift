@@ -4,8 +4,15 @@ final class ExplorerUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor
-    func testNormalLaunchNeverPretendsToHavePersonalData() {
+    private func testApp() -> XCUIApplication {
         let app = XCUIApplication()
+        app.launchEnvironment["CIRCLE_UI_TEST_EMPTY_CONNECTION"] = "1"
+        return app
+    }
+
+    @MainActor
+    func testNormalLaunchNeverPretendsToHavePersonalData() {
+        let app = testApp()
         app.launch()
         XCTAssertTrue(app.staticTexts["Your circle starts here"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["Synthetic preview"].exists)
@@ -13,8 +20,27 @@ final class ExplorerUITests: XCTestCase {
     }
 
     @MainActor
+    func testConnectionFormRejectsUnsafeURLBeforeEnrollment() {
+        let app = testApp()
+        app.launch()
+        let endpoint = app.textFields["Service URL"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
+        endpoint.clickOrTap()
+        endpoint.typeText("http://example.invalid")
+        app.buttons["Connect to People"].clickOrTap()
+        XCTAssertTrue(app.staticTexts["connection-error"].waitForExistence(timeout: 3))
+        #if os(macOS)
+        XCTAssertEqual(app.staticTexts["connection-error"].value as? String, "Enter an HTTPS service URL without a path, query, or password.")
+        #else
+        XCTAssertEqual(app.staticTexts["connection-error"].label, "Enter an HTTPS service URL without a path, query, or password.")
+        #endif
+        XCTAssertFalse(app.links["Approve read-only access"].exists)
+        XCTAssertTrue(app.staticTexts["Your circle starts here"].exists)
+    }
+
+    @MainActor
     func testExplorerFocusLayoutsSearchAndBack() {
-        let app = XCUIApplication()
+        let app = testApp()
         app.launchArguments = ["--preview-graph", "--reset-explorer-preferences"]
         app.launch()
         XCTAssertTrue(app.staticTexts["Synthetic preview"].waitForExistence(timeout: 10))
@@ -44,7 +70,7 @@ final class ExplorerUITests: XCTestCase {
     }
     @MainActor
     func testTrackingSurvivesRelaunchAndCanBeRemoved() {
-        let app = XCUIApplication()
+        let app = testApp()
         app.launchArguments = ["--preview-graph", "--reset-explorer-preferences"]
         app.launch()
         let search = app.textFields["Find a person"]
@@ -68,7 +94,7 @@ final class ExplorerUITests: XCTestCase {
 
     @MainActor
     func testReachOutHistoryUnknownAndSettingsPersist() {
-        let app = XCUIApplication()
+        let app = testApp()
         app.launchArguments = ["--preview-graph", "--reset-explorer-preferences"]
         app.launch()
         app.textFields["Find a person"].clickOrTap()
@@ -94,7 +120,7 @@ final class ExplorerUITests: XCTestCase {
 
     @MainActor
     func testNodeDragPanAndZoom() {
-        let app = XCUIApplication()
+        let app = testApp()
         app.launchArguments = ["--preview-graph", "--reset-explorer-preferences", "--reduce-motion"]
         app.launch()
         let node = app.buttons["person-person-00"]
@@ -125,7 +151,7 @@ final class ExplorerUITests: XCTestCase {
 
     @MainActor
     func testLocationAndPreferencesSurviveRelaunch() {
-        let app = XCUIApplication()
+        let app = testApp()
         app.launchArguments = ["--preview-graph", "--reset-explorer-preferences"]
         app.launch()
         app.buttons["grouping-city"].clickOrTap()
