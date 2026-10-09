@@ -16,6 +16,7 @@ struct ConnectedCircleView: View {
     @State private var showConnection = false
     @State private var identityError: String?
     @State private var tab = "explorer"
+    @State private var reachOut: ReachOutModel?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,10 +31,17 @@ struct ConnectedCircleView: View {
                     Button("Refresh") { Task { await model.refresh() } }.disabled(model.busy)
                 }.padding(12)
                 if model.failure != nil || model.cacheMessage != nil || model.graph?.selfID == nil || showConnection { connectionPanel }
-                CircleTabs(explorer: ExplorerView(graph: graph, profile: connection.preferenceKey),
-                           map: PeopleMapView(graph: graph, locator: Self.locator(connection), photos: Self.photos(connection), isPreview: false),
-                           tab: $tab)
-                    .id("\(model.refreshedAt?.timeIntervalSince1970 ?? 0):\(graph.selfID ?? "")")
+                if let reachOut, reachOut.profile == connection.preferenceKey {
+                    CircleTabs(explorer: ExplorerView(graph: graph, profile: connection.preferenceKey),
+                               map: PeopleMapView(graph: graph, locator: Self.locator(connection), photos: Self.photos(connection), isPreview: false),
+                               reachOut: ReachOutTab(graph: graph),
+                               tab: $tab)
+                        .id("\(model.refreshedAt?.timeIntervalSince1970 ?? 0):\(graph.selfID ?? "")")
+                        .environment(reachOut)
+                        .modifier(ReachOutReminderScheduling(model: reachOut, people: graph.people))
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             } else {
                 ScrollView {
                     VStack(spacing: 16) {
@@ -47,6 +55,12 @@ struct ConnectedCircleView: View {
             }
         }
         .task { await model.restore() }
+        .task(id: model.connection?.preferenceKey) {
+            reachOut = model.connection.map { ReachOutModel(profile: $0.preferenceKey, history: model.history) }
+            reachOut?.historyFailure = model.historyFailure
+        }
+        .onChange(of: model.history) { _, value in reachOut?.history = value }
+        .onChange(of: model.historyFailure) { _, value in reachOut?.historyFailure = value }
     }
 
     private static func locator(_ connection: StoredCircleConnection) -> CirclePlaceLocator {
@@ -91,7 +105,7 @@ struct ConnectedCircleView: View {
                 TextField("Service URL", text: $endpoint)
                     .textFieldStyle(.roundedBorder).accessibilityIdentifier("Service URL")
                     .disabled(model.busy)
-                Text("Circle requests names, circles, recorded relationships, residence history and profile photos. Approval happens in your service; Circle never asks for an operator token.")
+                Text("Circle requests names, circles, recorded relationships, residence history, profile photos and per-channel contact summaries. Approval happens in your service; Circle never asks for an operator token.")
                     .font(.caption).foregroundStyle(.secondary)
                 if let url = model.approvalURL {
                     Link("Approve read-only access", destination: url).accessibilityValue(url.absoluteString)

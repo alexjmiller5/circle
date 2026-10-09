@@ -39,16 +39,26 @@ struct CirclePeopleBindings: Codable, Sendable {
     let locations: CircleProjectionTable
     /// Optional so a profile without photo access stays valid.
     var photos: CircleProjectionTable? = nil
+    /// Contact history: summaries and imports arrive together; address-book links need them.
+    var summaries: CircleProjectionTable? = nil
+    var imports: CircleProjectionTable? = nil
+    var contacts: CircleProjectionTable? = nil
 
     func validate() throws {
         try people.validate(keys: ["id", "name", "circles", "deleted"])
         try relations.validate(keys: ["id", "person", "related", "kind", "deleted"])
         try locations.validate(keys: ["id", "person", "city", "country", "start", "end", "deleted"])
         try photos?.validate(keys: ["id", "person", "platform", "key", "sha256", "fetched", "updated", "deleted"], files: true)
+        try summaries?.validate(keys: CommunicationHistoryReader.summaryKeys)
+        try imports?.validate(keys: CommunicationHistoryReader.importKeys)
+        try contacts?.validate(keys: CommunicationHistoryReader.contactKeys)
+        guard (summaries == nil) == (imports == nil), contacts == nil || summaries != nil else {
+            throw CircleConnectionError.invalidConfiguration
+        }
     }
 
     var scopes: [String] {
-        Set(([people, relations, locations] + [photos].compactMap { $0 }).flatMap { table in
+        Set(([people, relations, locations] + [photos, summaries, imports, contacts].compactMap { $0 }).flatMap { table in
             table.columns.map { "tables:read:\(table.table):\($0)" }
         } + (photos?.files ?? []).map { "files:read:" + $0 }).sorted()
     }

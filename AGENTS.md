@@ -4,11 +4,27 @@ Native SwiftUI iOS and macOS relationship explorer. The explorer supports
 Constellation, Pathways and Orbits with search, focus history, group selection,
 base/current city distinctions, pan, zoom, node dragging and saved display
 preferences. Circle-local tracking and per-person reach-out settings persist
-by profile. Reach-out history remains explicitly incomplete until verified
-evidence is connected; reminder preferences do not claim active delivery. Normal launch offers native read-only People enrollment; `--preview-graph`
-explicitly opens synthetic data. The read-only contact metadata engine checks full authorized participant pages,
-completed imports, coverage totals and matching rereads. Its results remain
-provisional, with reminders disabled until reconciliation cost is measured.
+by profile. Normal launch offers native read-only People enrollment; `--preview-graph`
+explicitly opens synthetic data, including synthetic contact history.
+The Reach out tab reads the service's maintained communication summaries and
+import coverage (never streams or source apps): per person, best-of across
+channels for last sent message, last answered call and last received message.
+The default clock resets on a sent direct message, an answered direct call or
+a logged hangout (no hangout source exists yet); incoming-only activity is
+shown but resets only when enabled per person. Groups: Due now (elapsed past
+cadence), Not contacted in 1 month, Not contacted in 3 weeks, History unknown,
+Snoozed, In touch, each row with its reason. Missing history or no qualifying
+event in coverage is Unknown, never "never contacted"; partial import coverage
+and the newest refresh are shown. Message, Call, WhatsApp and FaceTime open
+the app's own scheme with fallbacks (macOS `imessage:` then `sms:`, `tel:`
+then `facetime-audio:`; WhatsApp `whatsapp://` then `https://wa.me/`); the
+number or email is read from this device's Contacts at tap time (confirmed
+address-book link first, else a name match with a chooser), never stored.
+Opening a compose view never counts as contact. Reminders are local
+notifications, off by default and enabled per person, with quiet hours,
+lock-screen name hiding, a Snooze action and no push server; a request id
+names the person and its due or snooze moment, and a ledger keeps a delivered
+reminder from repeating.
 City-only visit logic requires two fresh checks at least five minutes apart
 for arrival and departure, and emits once per confirmed visit. It persists
 per person/profile; unknown or paused readings never prove departure. Source
@@ -18,9 +34,8 @@ The Map tab pins each person with exactly one current base (city-level,
 geocoded on device), filters by circle, lists circles as met-where groups and
 opens a person sheet: circles, base history, hometown (Unknown: no granted
 column carries it), presence (Unknown until the collector feed is connected)
-and the newest photo per platform. Contact-history enrollment and UI
-integration, current presence and notification delivery are not implemented.
-Never imply preview data is live.
+and the newest photo per platform, followed by the person's reach-out
+sections. Current presence is not implemented. Never imply preview data is live.
 
 ## Build and verification
 
@@ -33,6 +48,12 @@ packages. Deployment targets: iOS 17 and macOS 14. Development bundle ID:
 - `just check`: locally signed native build; no installation or deployment.
 - `just test`: pure Swift graph/state tests and Python call-reader tests.
 - `just test-ui`: XCUITest flows on `CIRCLE_DESTINATION` (default macOS).
+  `ReachOutSmokeUITests` is an opt-in iOS simulator smoke
+  (`TEST_RUNNER_CIRCLE_SMOKE=1`, after `xcrun simctl privacy <udid> grant
+  contacts` for `com.example.circle` and its `.uitests.xctrunner`): it creates
+  and removes one synthetic contact card, opens each deep link, checks the
+  fallbacks and screenshots a delivered reminder. XCUITest cannot query system
+  banners; the attached screen captures show them.
 - `just run --preview-graph`: launch synthetic Mac preview.
 - `just run`: launch unconnected Mac app.
 - `just calls --help`: existing call-history CLI.
@@ -50,9 +71,15 @@ outside cloud-synced folders. UI automation permissions are native user state.
 ## Source map
 
 - `nudge/nudge/Graph/`: graph values, layouts, preferences, native enrollment, bounded HTTP reads,
-  secure Keychain storage and private cache. `PeopleMap.swift`: map pins, geocode
+  secure Keychain storage and private cache. `CommunicationHistory.swift`:
+  summary/import/address-book-link reader; `ReachOut.swift`: assessment,
+  groups and reasons; `ReachOutReminders.swift`: reminder plan, quiet hours and
+  ledger reconciliation; `ContactLinks.swift`: Contacts matching and URLs. `PeopleMap.swift`: map pins, geocode
   cache, photo choice and the content-addressed photo cache.
 - `nudge/nudge/`: native views and explicit synthetic development fixture.
+  `ReachOutModel.swift` (per-profile settings, notification scheduling and the
+  Snooze action), `ReachOutView.swift`, `ContactActions.swift` (Contacts
+  access and URL opening).
 - `GraphTests/`: Swift Testing, including large graphs and invalid preferences.
 - `nudge/nudgeUITests/`: real native interactions through XCTest.
 - `scripts/call_log.py`, `tests/`: read-only call reader, scoped event identity,
@@ -79,9 +106,14 @@ Circle is a dedicated read-only Life Data consumer through its supported API.
 The service owns the `circle-reader` profile and `circle.reader` table/column
 bindings; personal schema and values never ship in this repo. The reader
 requires exactly the grants `CirclePeopleBindings.scopes` derives: projected
-columns for people, relations, locations and the optional photos binding, plus
-one `files:read:<prefix>` per photo binding `files` prefix (live: 24 columns and
-`photos/people/`). Photos are requested only for keys under a granted prefix;
+columns for people, relations, locations and the optional photos binding, the
+optional history bindings (`summaries` and `imports` together, `contacts` for
+address-book links), plus one `files:read:<prefix>` per photo binding `files`
+prefix (live: 56 columns and `photos/people/`, 57 grants). History reads are
+the full summary table, imports by equality on source (newest live run per
+source decides its coverage) and links by equality on the address-book
+platform; tombstones are dropped. A failed history read keeps the last
+history beside a fresh People graph. Photos are requested only for keys under a granted prefix;
 other keys show as stored outside Circle's access without a request. No broad
 token, schema pull, replica sync, writes or streams follow from that grant. Each device enrolls its own credential
 and keeps it in native Keychain storage. Service rotation/revision changes

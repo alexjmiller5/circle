@@ -118,29 +118,71 @@ final class ExplorerUITests: XCTestCase {
     }
 
     @MainActor
-    func testReachOutHistoryUnknownAndSettingsPersist() {
+    private func openReachOutTab(_ app: XCUIApplication) {
+        #if os(macOS)
+        let tab = app.radioButtons["Reach out"].exists ? app.radioButtons["Reach out"] : app.buttons["Reach out"]
+        #else
+        let tab = app.tabBars.buttons["Reach out"].exists ? app.tabBars.buttons["Reach out"] : app.buttons["Reach out"]
+        #endif
+        XCTAssertTrue(tab.waitForExistence(timeout: 10))
+        tab.clickOrTap()
+    }
+
+    @MainActor
+    private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<10 where !(element.exists && element.isHittable) {
+            #if os(macOS)
+            app.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200)
+            #else
+            app.swipeUp()
+            #endif
+        }
+    }
+
+    @MainActor
+    func testReachOutGroupsExplainReasonsAndSettingsPersist() {
         let app = testApp()
-        app.launchArguments = ["--preview-graph", "--reset-explorer-preferences"]
+        app.launchArguments = ["--preview-graph", "--reset-explorer-preferences", "--reduce-motion"]
         app.launch()
-        app.textFields["Find a person"].clickOrTap()
-        app.textFields["Find a person"].typeText("Person 1")
-        app.buttons["search-person-01"].clickOrTap()
-        app.buttons["tracking-person-01"].clickOrTap()
-        app.buttons["Reach out"].clickOrTap()
-        XCTAssertTrue(app.staticTexts["History incomplete"].waitForExistence(timeout: 5))
-        app.buttons["reachout-person-01"].clickOrTap()
-        XCTAssertTrue(app.staticTexts["No verified contact history is connected."].exists)
-        app.buttons["cadence-quarterly"].clickOrTap()
-        app.buttons["priority-high"].clickOrTap()
-        app.terminate()
-        app.launchArguments = ["--preview-graph"]
-        app.launch()
-        app.buttons["Reach out"].clickOrTap()
-        app.buttons["reachout-person-01"].clickOrTap()
-        XCTAssertEqual(app.buttons["cadence-quarterly"].value as? String, "Selected")
-        XCTAssertEqual(app.buttons["priority-high"].value as? String, "Selected")
+        openReachOutTab(app)
+        XCTAssertTrue(app.staticTexts["reachout-group-due"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'History refreshed'")).firstMatch.exists)
+        let person = app.buttons["reachout-person-01"]
+        XCTAssertTrue(person.waitForExistence(timeout: 5))
+        XCTAssertTrue(person.label.contains("since your last sent message"), person.label)
+        XCTAssertTrue(person.label.contains("does not reset"), person.label)
+        // Incoming-only history is unknown, never "never contacted".
+        let unknown = app.buttons["reachout-person-08"]
+        scrollTo(unknown, in: app)
+        XCTAssertTrue(unknown.label.contains("Unknown"), unknown.label)
+        XCTAssertFalse(unknown.label.lowercased().contains("never contacted"))
+        scrollTo(person, in: app)
+        person.clickOrTap()
+        XCTAssertTrue(app.staticTexts["reachout-status"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["history-imessage"].exists || app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'iMessage'")).firstMatch.exists)
+        let quarterly = app.buttons["cadence-quarterly"]
+        scrollTo(quarterly, in: app)
+        quarterly.clickOrTap()
+        let high = app.buttons["priority-high"]
+        scrollTo(high, in: app)
+        high.clickOrTap()
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Reach-out settings"; screenshot.lifetime = .keepAlways; add(screenshot)
+        screenshot.name = "Reach-out person"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.terminate()
+        app.launchArguments = ["--preview-graph", "--reduce-motion"]
+        app.launch()
+        openReachOutTab(app)
+        XCTAssertTrue(app.staticTexts["reachout-group-due"].waitForExistence(timeout: 10))
+        let again = app.buttons["reachout-person-01"]
+        scrollTo(again, in: app)
+        XCTAssertTrue(app.staticTexts["reachout-group-month"].exists)
+        // A quarterly cadence moves 40 days of silence out of Due into the one-month group.
+        XCTAssertTrue(again.label.contains("Every three months cadence"), again.label)
+        XCTAssertTrue(again.label.contains("High priority"), again.label)
+        again.clickOrTap()
+        let saved = app.buttons["cadence-quarterly"]
+        scrollTo(saved, in: app)
+        XCTAssertEqual(saved.value as? String, "Selected")
     }
 
     @MainActor

@@ -2,67 +2,121 @@ import Foundation
 import Testing
 @testable import CircleGraph
 
-private func instant(_ value: String) -> Date { ISO8601DateFormatter().date(from: value)! }
+private func instant(_ value: String) -> Date { try! Date(value, strategy: .iso8601) }
+private let now = instant("2026-03-10T12:00:00Z")
+private let utc: Calendar = { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c }()
 
-@Test func onlyProvenDirectContactResetsTheDefaultClock() {
-    let now = instant("2026-03-10T12:00:00Z")
-    let sent = ContactInteraction(id: "sent", personID: "p", occurredAt: now, kind: .outgoingMessage, verified: true, direct: true, participantsComplete: true, identityResolved: true)
-    let received = ContactInteraction(id: "received", personID: "p", occurredAt: now, kind: .incomingMessage, verified: true, direct: true, participantsComplete: true, identityResolved: true)
-    let attempt = ContactInteraction(id: "attempt", personID: "p", occurredAt: now, kind: .callAttempt, verified: true, direct: true, participantsComplete: true, identityResolved: true)
-    let pending = ContactInteraction(id: "pending", personID: "p", occurredAt: now, kind: .outgoingMessage, verified: false)
-    var group = sent; group.id = "group"; group.direct = false
-    var partial = sent; partial.id = "partial"; partial.participantsComplete = false
-    var unknownPerson = sent; unknownPerson.id = "unresolved"; unknownPerson.identityResolved = false
-    let settings = ReachOutPreferences()
-    #expect([sent, received, attempt, pending, group, partial, unknownPerson].filter { $0.qualifies(settings: settings, now: now) }.map(\.id) == ["sent"])
-    var enabled = settings
-    enabled.resetKinds.insert(.incomingMessage)
-    #expect(received.qualifies(settings: enabled, now: now))
-    #expect(!ContactInteraction(id: "future", personID: "p", occurredAt: now.addingTimeInterval(1), kind: .hangout, verified: true, direct: true, participantsComplete: true, identityResolved: true).qualifies(settings: settings, now: now))
+private func days(_ count: Double) -> Date { now.addingTimeInterval(-count * 86_400) }
+
+private func history(_ channels: [ChannelSummary], person: String = "p", sources: [SourceCoverage]? = nil) -> CommunicationHistory {
+    var value = CommunicationHistory()
+    value.channels[person] = channels
+    value.sources = sources ?? [
+        SourceCoverage(source: "apple_messages", state: .complete, reason: nil, completedAt: days(0.5), firstEvent: instant("2017-08-11T00:00:00Z")),
+        SourceCoverage(source: "apple_calls", state: .partial, reason: "outbox", completedAt: days(0.5), firstEvent: instant("2025-07-16T00:00:00Z"))
+    ]
+    return value
 }
 
-@Test func monthlyCadenceUsesCalendarAndSnoozeDoesNotChangeEvidence() {
+private func assess(_ value: CommunicationHistory?, _ settings: ReachOutPreferences = ReachOutPreferences(), person: String = "p") -> ReachOutAssessment {
+    ReachOutAssessment(personID: person, history: value, settings: settings, now: now, calendar: utc)
+}
+
+@Test func defaultClockResetsOnSentMessagesAndAnsweredCallsOnly() {
+    let channels = [
+        ChannelSummary(channel: .imessage, lastSent: days(40), lastReceived: days(2), refreshedAt: now),
+        ChannelSummary(channel: .phone, lastAnsweredCall: days(35), lastCall: days(1), refreshedAt: now)
+    ]
+    let value = assess(history(channels))
+    // Incoming messages and unanswered calls are shown, never a reset.
+    #expect(value.lastContact?.kind == .answeredCall)
+    #expect(value.lastContact?.moment == ContactMoment(date: days(35), channel: .phone))
+    #expect(value.lastIncoming?.date == days(2))
+    #expect(value.bucket == .due)
+    #expect(value.elapsedDays == 35)
+    #expect(value.reason.contains("35 days since your last answered call (Phone)"))
+    #expect(value.reason.contains("does not reset"))
+    var incoming = ReachOutPreferences()
+    incoming.resetKinds.insert(.incomingMessage)
+    let configured = assess(history(channels), incoming)
+    #expect(configured.lastContact?.kind == .incomingMessage)
+    #expect(configured.bucket == .recent)
+    #expect(!configured.reason.contains("does not reset"))
+}
+
+@Test func bestOfAcrossChannelsPicksTheNewestQualifyingEvent() {
+    let value = assess(history([
+        ChannelSummary(channel: .sms, lastSent: days(50), refreshedAt: now),
+        ChannelSummary(channel: .whatsapp, lastSent: days(10), refreshedAt: now),
+        ChannelSummary(channel: .imessage, lastSent: days(25), refreshedAt: now)
+    ]))
+    #expect(value.lastContact?.moment.channel == .whatsapp)
+    #expect(value.bucket == .recent)
+}
+
+@Test func missingOrPartialCoverageIsUnknownNeverNeverContacted() {
+    let notConnected = assess(nil)
+    #expect(notConnected.bucket == .unknown)
+    #expect(notConnected.lastContact == nil && notConnected.dueAt == nil && notConnected.reminderAt == nil)
+    #expect(notConnected.reason.contains("not connected"))
+    let incomingOnly = assess(history([ChannelSummary(channel: .imessage, lastReceived: days(3), refreshedAt: now)]))
+    #expect(incomingOnly.bucket == .unknown)
+    #expect(incomingOnly.reason.hasPrefix("Unknown"))
+    #expect(incomingOnly.reason.contains("partial"))
+    #expect(!incomingOnly.reason.lowercased().contains("never"))
+    #expect(incomingOnly.reason.contains("3 days ago"))
+    var reminders = ReachOutPreferences(); reminders.remindersEnabled = true
+    #expect(assess(history([]), reminders).reminderAt == nil)
+}
+
+@Test func futureDatedEventsNeverResetTheClock() {
+    let value = assess(history([ChannelSummary(channel: .imessage, lastSent: now.addingTimeInterval(3600), refreshedAt: now)]))
+    #expect(value.lastContact == nil)
+    #expect(value.bucket == .unknown)
+}
+
+@Test func groupsSeparateCadenceFromElapsedTime() {
+    var quarterly = ReachOutPreferences(); quarterly.cadence = .quarterly
+    #expect(assess(history([ChannelSummary(channel: .sms, lastSent: days(33), refreshedAt: now)]), quarterly).bucket == .month)
+    #expect(assess(history([ChannelSummary(channel: .sms, lastSent: days(22), refreshedAt: now)]), quarterly).bucket == .threeWeeks)
+    #expect(assess(history([ChannelSummary(channel: .sms, lastSent: days(20), refreshedAt: now)]), quarterly).bucket == .recent)
+    var weekly = ReachOutPreferences(); weekly.cadence = .weekly
+    #expect(assess(history([ChannelSummary(channel: .sms, lastSent: days(8), refreshedAt: now)]), weekly).bucket == .due)
+}
+
+@Test func monthlyCadenceUsesTheCalendarAndSnoozeKeepsTheEvidence() {
     let last = instant("2026-01-31T12:00:00Z")
-    let now = instant("2026-03-01T12:00:00Z")
-    let event = ContactInteraction(id: "call", personID: "p", occurredAt: last, kind: .answeredCall, verified: true, direct: true, participantsComplete: true, identityResolved: true)
+    let at = instant("2026-03-01T12:00:00Z")
+    let summary = history([ChannelSummary(channel: .phone, lastAnsweredCall: last, refreshedAt: at)])
     var settings = ReachOutPreferences()
-    let due = ReachOutAssessment(personID: "p", interactions: [event], history: .ready, settings: settings, now: now)
-    #expect(due.lastContact == last)
+    let due = ReachOutAssessment(personID: "p", history: summary, settings: settings, now: at, calendar: utc)
     #expect(due.dueAt == instant("2026-02-28T12:00:00Z"))
-    #expect(due.bucket == .overdue)
-    #expect(!due.notificationEligible)
+    #expect(due.bucket == .due)
+    #expect(due.reminderAt == nil)
     settings.remindersEnabled = true
+    #expect(ReachOutAssessment(personID: "p", history: summary, settings: settings, now: at, calendar: utc).reminderAt == due.dueAt)
     settings.snoozedUntil = instant("2026-03-05T12:00:00Z")
-    let snoozed = ReachOutAssessment(personID: "p", interactions: [event], history: .ready, settings: settings, now: now)
+    let snoozed = ReachOutAssessment(personID: "p", history: summary, settings: settings, now: at, calendar: utc)
     #expect(snoozed.bucket == .snoozed)
-    #expect(snoozed.lastContact == last)
-    #expect(!snoozed.notificationEligible)
+    #expect(snoozed.lastContact?.moment.date == last)
+    #expect(snoozed.reminderAt == settings.snoozedUntil)
+    #expect(snoozed.reason.contains("Snoozed until"))
 }
 
-@Test func partialHistoryAndRetractionsNeverCreateNeverContactedClaims() {
-    let now = instant("2026-03-10T12:00:00Z")
-    let old = ContactInteraction(id: "old", personID: "p", occurredAt: instant("2026-01-01T12:00:00Z"), kind: .outgoingMessage, verified: true, direct: true, participantsComplete: true, identityResolved: true)
-    var settings = ReachOutPreferences(); settings.remindersEnabled = true
-    let partial = ReachOutAssessment(personID: "p", interactions: [old], history: .incomplete, settings: settings, now: now)
-    #expect(partial.lastContact == old.occurredAt)
-    #expect(partial.bucket == .historyIncomplete)
-    #expect(!partial.notificationEligible)
-    var corrected = old; corrected.personID = "other"
-    let afterCorrection = ReachOutAssessment(personID: "p", interactions: [corrected], history: .dataPending, settings: settings, now: now)
-    #expect(afterCorrection.lastContact == nil)
-    #expect(afterCorrection.bucket == .historyIncomplete)
-    var deleted = old; deleted.deleted = true
-    #expect(ReachOutAssessment(personID: "p", interactions: [deleted], history: .ready, settings: settings, now: now).bucket == .historyIncomplete)
+@Test func priorityRaisesTheScoreAndIsExplained() {
+    let channels = [ChannelSummary(channel: .sms, lastSent: days(45), refreshedAt: now)]
+    var high = ReachOutPreferences(); high.priority = .high
+    let normal = assess(history(channels)), raised = assess(history(channels), high)
+    #expect(raised.score > normal.score)
+    #expect(raised.reason.contains("High priority"))
+    #expect(!normal.reason.contains("priority"))
 }
 
-@Test func dueSoonAndHangoutCadencesRemainIndependent() {
-    let now = instant("2026-03-27T12:00:00Z")
-    let call = ContactInteraction(id: "call", personID: "p", occurredAt: instant("2026-03-01T12:00:00Z"), kind: .answeredCall, verified: true, direct: true, participantsComplete: true, identityResolved: true)
-    var settings = ReachOutPreferences()
-    let contact = ReachOutAssessment(personID: "p", interactions: [call], history: .ready, settings: settings, now: now)
-    #expect(contact.bucket == .dueSoon)
-    settings.resetKinds = [.hangout]
-    #expect(ReachOutAssessment(personID: "p", interactions: [call], history: .ready, settings: settings, now: now).lastContact == nil)
+@Test func hangoutsHaveNoSourceYet() {
+    var settings = ReachOutPreferences(); settings.resetKinds = [.hangout]
+    let value = assess(history([ChannelSummary(channel: .sms, lastSent: days(1), refreshedAt: now)]), settings)
+    #expect(value.lastContact == nil)
+    #expect(value.bucket == .unknown)
 }
 
 @Test func reachOutSettingsPersistWithoutLeakingBetweenPeopleOrProfiles() throws {
@@ -80,6 +134,19 @@ private func instant(_ value: String) -> Date { ISO8601DateFormatter().date(from
     #expect(loaded["person-1"] == settings)
     #expect(loaded["person-2"] == nil)
     #expect(try ReachOutPreferencesStore(defaults: defaults, profile: "connected").load().isEmpty)
+    var reminders = ReminderSettings(); reminders.hideNames = true; reminders.quietStartHour = 22
+    store.saveReminders(reminders)
+    #expect(store.loadReminders() == reminders)
+    #expect(ReachOutPreferencesStore(defaults: defaults, profile: "connected").loadReminders() == ReminderSettings())
+    store.saveLedger(["a", "b"])
+    #expect(store.loadLedger() == ["a", "b"])
     defaults.set(Data("invalid".utf8), forKey: "reach-out-v1-preview")
     #expect(throws: (any Error).self) { try store.load() }
+}
+
+@Test func earlierSavedPreferencesStillDecode() throws {
+    let saved = #"{"p":{"cadence":"monthly","hangoutCadence":"weekly","priority":3,"remindersEnabled":false,"hangoutRemindersEnabled":false,"resetKinds":["outgoingMessage","answeredCall","hangout"]}}"#
+    let decoded = try JSONDecoder().decode([String: ReachOutPreferences].self, from: Data(saved.utf8))
+    #expect(decoded["p"]?.priority == .high)
+    #expect(decoded["p"]?.resetKinds == [.outgoingMessage, .answeredCall, .hangout])
 }

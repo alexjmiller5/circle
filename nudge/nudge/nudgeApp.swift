@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct CircleApp: App {
+    init() { ReachOutNotifications.shared.register() }
+
     var body: some Scene {
         WindowGroup {
             ContentView(preview: ProcessInfo.processInfo.arguments.contains("--preview-graph"))

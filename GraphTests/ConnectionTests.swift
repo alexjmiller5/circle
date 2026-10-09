@@ -13,6 +13,8 @@ private actor ConnectionFixture: CircleHTTPClient {
     let fingerprint: String
     let bindings: CirclePeopleBindings
     var failRows = false
+    var failHistory = false
+    func failHistoryReads() { failHistory = true }
     var requestedPaths: [String] = []
     var revocations = 0
     var firstRevocationUnauthorized = false
@@ -40,7 +42,12 @@ private actor ConnectionFixture: CircleHTTPClient {
         case "/v1/rows/pull":
             if failRows { throw CircleConnectionError.unavailable }
             let table = try JSONSerialization.jsonObject(with: body!) as! [String:Any]
-            value = ["rows":table["table"] as? String == "contacts" ? [["id":"p1","label":"Person 1","groups":NSNull(),"deleted_at":NSNull()]] : [], "next_cursor":NSNull()]
+            if failHistory && table["table"] as? String == "talk_summary" { return CircleHTTPReply(status: 503, data: Data("{}".utf8)) }
+            value = ["rows":table["table"] as? String == "talk_summary" ? [[
+                "id":"p1:sms", "who":"p1", "via":"sms", "sent_at":"2026-09-01T10:00:00.000Z", "got_at":NSNull(), "answered_at":NSNull(),
+                "answered_secs":NSNull(), "call_at":NSNull(), "sent_n":1, "got_n":0, "answered_n":0, "missed_n":0, "from_at":NSNull(),
+                "to_at":NSNull(), "refreshed_at":"2026-10-09T00:00:00.000Z", "review":NSNull(), "updated_at":"2026-10-09T00:00:00.000Z",
+                "deleted_at":NSNull()]] : table["table"] as? String == "contacts" ? [["id":"p1","label":"Person 1","groups":NSNull(),"deleted_at":NSNull()]] : [], "next_cursor":NSNull()]
         default: throw CircleConnectionError.invalidResponse
         }
         return CircleHTTPReply(status: 200, data: try JSONSerialization.data(withJSONObject: value))
@@ -149,4 +156,31 @@ private actor PausedSession: CircleHTTPClient {
     #expect(store.value?.bindings.photos?.files == ["pictures/people/"])
     #expect(model.graph?.byID["p1"]?.photoChoices.isEmpty == true)
     #expect(await fixture.requestedPaths.filter { $0 == "/v1/rows/pull" }.count == 4)
+}
+
+@Test @MainActor func historyProfileReadsSummariesAndAFailedHistoryReadKeepsTheLastOne() async throws {
+    var bindings = CirclePeopleBindings(
+        people: .init(table:"contacts", fields:["id":"id","name":"label","circles":"groups","deleted":"deleted_at"]),
+        relations: .init(table:"links", fields:["id":"id","person":"subject","related":"object","kind":"kind","deleted":"deleted_at"]),
+        locations: .init(table:"bases", fields:["id":"id","person":"person","city":"city","country":"country","start":"start","end":"end","deleted":"deleted_at"]))
+    bindings.summaries = summaryTable; bindings.imports = importTable; bindings.contacts = contactTable
+    let candidate = CircleDeviceCandidate(token: "fixture-candidate")
+    let fixture = ConnectionFixture(fingerprint: candidate.fingerprint, bindings: bindings)
+    let store = MemoryCredentialStore()
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let cache = CircleGraphCache(directory: directory)
+    let model = CircleConnectionModel(store: store, cache: cache, candidate: { candidate }, client: { _,_ in fixture })
+    await model.connect(endpoint: "https://example.invalid")
+    #expect(model.failure == nil)
+    #expect(store.value?.profile.scopes.contains("tables:read:talk_runs:why") == true)
+    let first = try #require(model.history)
+    #expect(first.channels["p1"]?.first?.sent == 1)
+    #expect(try cache.load(profile: try #require(store.value?.preferenceKey))?.history == first)
+    await fixture.failHistoryReads()
+    await model.refresh()
+    #expect(model.failure == nil)
+    #expect(model.graph?.byID["p1"] != nil)
+    #expect(model.history == first)
+    #expect(model.historyFailure != nil)
 }

@@ -175,6 +175,7 @@ struct PersonMapSheet: View {
     let photos: CirclePhotoLoader?
     let isPreview: Bool
     @Environment(\.dismiss) private var dismiss
+    @Environment(ReachOutModel.self) private var reachOut: ReachOutModel?
     @State private var platform: String?
     @State private var result: CirclePhotoResult?
 
@@ -211,6 +212,7 @@ struct PersonMapSheet: View {
                     Text(isPreview ? "Synthetic preview presence." : "Presence is not connected. A base is not a current location.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if reachOut != nil { ReachOutSections(person: person) }
             }
             .formStyle(.grouped)
             .navigationTitle(person.name)

@@ -1,25 +1,16 @@
 import Foundation
 
+/// What may reset a person's reach-out clock. Hangouts have no recorded source yet.
 enum ContactInteractionKind: String, Codable, CaseIterable, Sendable {
-    case outgoingMessage, incomingMessage, answeredCall, callAttempt, hangout
-}
+    case outgoingMessage, incomingMessage, answeredCall, hangout
 
-/// Normalized evidence, after source/participant/publication reconciliation.
-/// `verified` is false until the adapter has proven the required source state.
-struct ContactInteraction: Equatable, Sendable {
-    var id: String
-    var personID: String
-    var occurredAt: Date
-    var kind: ContactInteractionKind
-    var verified = false
-    var direct = false
-    var participantsComplete = false
-    var identityResolved = false
-    var deleted = false
-
-    func qualifies(settings: ReachOutPreferences, now: Date) -> Bool {
-        verified && direct && participantsComplete && identityResolved && !deleted &&
-        occurredAt <= now && kind != .callAttempt && settings.resetKinds.contains(kind)
+    var label: String {
+        switch self {
+        case .outgoingMessage: "sent message"
+        case .incomingMessage: "received message"
+        case .answeredCall: "answered call"
+        case .hangout: "logged hangout"
+        }
     }
 }
 
@@ -60,47 +51,107 @@ struct ReachOutPreferences: Codable, Equatable, Sendable {
     var resetKinds: Set<ContactInteractionKind> = [.outgoingMessage, .answeredCall, .hangout]
 }
 
-enum ContactHistoryReadiness: Sendable { case ready, incomplete, dataPending }
+struct ContactMoment: Equatable, Sendable {
+    let date: Date
+    let channel: CommunicationChannel
+}
+
+/// Best-of across a person's channels. Events dated after `now` are data to review, never contact.
+struct PersonContactHistory: Sendable {
+    let channels: [ChannelSummary]
+    let lastSent: ContactMoment?
+    let lastReceived: ContactMoment?
+    let lastAnsweredCall: ContactMoment?
+
+    init(_ channels: [ChannelSummary], now: Date) {
+        self.channels = channels
+        func newest(_ date: (ChannelSummary) -> Date?) -> ContactMoment? {
+            channels.compactMap { summary in date(summary).flatMap { $0 <= now ? ContactMoment(date: $0, channel: summary.channel) : nil } }
+                .max { $0.date < $1.date }
+        }
+        lastSent = newest(\.lastSent)
+        lastReceived = newest(\.lastReceived)
+        lastAnsweredCall = newest(\.lastAnsweredCall)
+    }
+
+    func latest(_ kind: ContactInteractionKind) -> ContactMoment? {
+        switch kind {
+        case .outgoingMessage: lastSent
+        case .incomingMessage: lastReceived
+        case .answeredCall: lastAnsweredCall
+        case .hangout: nil
+        }
+    }
+}
+
 enum ReachOutBucket: String, CaseIterable, Sendable {
-    case overdue = "Overdue", dueSoon = "Due soon", historyIncomplete = "History incomplete"
-    case snoozed = "Snoozed", upToDate = "Up to date"
+    case due = "Due now", month = "Not contacted in 1 month", threeWeeks = "Not contacted in 3 weeks"
+    case unknown = "History unknown", snoozed = "Snoozed", recent = "In touch"
 }
 
 struct ReachOutAssessment: Sendable {
-    let lastContact: Date?
+    struct Evidence: Equatable, Sendable {
+        let kind: ContactInteractionKind
+        let moment: ContactMoment
+    }
+    let lastContact: Evidence?
+    /// Shown even when it does not reset the clock.
+    let lastIncoming: ContactMoment?
     let dueAt: Date?
+    let elapsedDays: Int?
     let bucket: ReachOutBucket
-    let notificationEligible: Bool
     let score: Double
+    let reason: String
+    /// When a reminder is wanted: the due moment, or the end of a snooze.
+    let reminderAt: Date?
 
-    init(personID: String, interactions: [ContactInteraction], history: ContactHistoryReadiness,
-         settings: ReachOutPreferences, now: Date, calendar: Calendar = utcCalendar) {
-        lastContact = interactions.filter {
-            $0.personID == personID && $0.qualifies(settings: settings, now: now)
-        }.map(\.occurredAt).max()
-        dueAt = lastContact.flatMap { settings.cadence.next(after: $0, calendar: calendar) }
-        if history != .ready || dueAt == nil {
-            bucket = .historyIncomplete
-        } else if let snooze = settings.snoozedUntil, snooze > now {
-            bucket = .snoozed
-        } else if let dueAt, dueAt <= now {
-            bucket = .overdue
-        } else if let dueAt, dueAt <= calendar.date(byAdding: .day, value: 7, to: now)! {
-            bucket = .dueSoon
-        } else {
-            bucket = .upToDate
-        }
-        notificationEligible = settings.remindersEnabled && bucket == .overdue
-        if history == .ready, let lastContact, let dueAt, dueAt > lastContact {
-            score = now.timeIntervalSince(lastContact) / dueAt.timeIntervalSince(lastContact) * Double(settings.priority.rawValue)
+    init(personID: String, history: CommunicationHistory?, settings: ReachOutPreferences, now: Date,
+         calendar: Calendar = .current) {
+        let person = PersonContactHistory(history?.channels[personID] ?? [], now: now)
+        lastContact = settings.resetKinds.compactMap { kind in person.latest(kind).map { Evidence(kind: kind, moment: $0) } }
+            .max { $0.moment.date < $1.moment.date }
+        lastIncoming = person.lastReceived
+        let last = lastContact?.moment.date
+        dueAt = last.flatMap { settings.cadence.next(after: $0, calendar: calendar) }
+        elapsedDays = last.flatMap { calendar.dateComponents([.day], from: $0, to: now).day }
+        let snoozed = settings.snoozedUntil.flatMap { $0 > now ? $0 : nil }
+        if history == nil || last == nil || dueAt == nil { bucket = snoozed == nil ? .unknown : .snoozed }
+        else if snoozed != nil { bucket = .snoozed }
+        else if dueAt! <= now { bucket = .due }
+        else if calendar.date(byAdding: .month, value: 1, to: last!)! <= now { bucket = .month }
+        else if calendar.date(byAdding: .day, value: 21, to: last!)! <= now { bucket = .threeWeeks }
+        else { bucket = .recent }
+        if let last, let dueAt, dueAt > last, bucket != .snoozed {
+            score = now.timeIntervalSince(last) / dueAt.timeIntervalSince(last) * Double(settings.priority.rawValue)
         } else { score = 0 }
+        reminderAt = settings.remindersEnabled ? dueAt.map { max($0, snoozed ?? $0) } : nil
+
+        var parts: [String] = []
+        let format = Date.FormatStyle(date: .abbreviated, time: .omitted, calendar: calendar, timeZone: calendar.timeZone)
+        if let snoozed { parts.append("Snoozed until \(snoozed.formatted(format)).") }
+        if history == nil {
+            parts.append("Contact history is not connected, so no due date is claimed.")
+        } else if let lastContact, let dueAt, let elapsedDays {
+            parts.append("\(Self.days(elapsedDays)) since your last \(lastContact.kind.label) (\(lastContact.moment.channel.label)).")
+            parts.append("\(settings.cadence.label) cadence, due \(dueAt.formatted(format)).")
+        } else {
+            let kinds = settings.resetKinds.subtracting([.hangout]).sorted { $0.rawValue < $1.rawValue }.map(\.label)
+            let sources = history!.sources
+            var unknown = "Unknown: no \(kinds.isEmpty ? "tracked contact" : kinds.joined(separator: " or ")) in the connected history"
+            if let start = sources.compactMap(\.firstEvent).min() { unknown += " since \(start.formatted(format))" }
+            if sources.isEmpty || sources.contains(where: { $0.state != .complete }) { unknown += ", which is partial" }
+            parts.append(unknown + ".")
+        }
+        if settings.priority != .normal { parts.append("\(settings.priority.label) priority.") }
+        if !settings.resetKinds.contains(.incomingMessage), let incoming = lastIncoming,
+           lastContact.map({ incoming.date > $0.moment.date }) ?? true {
+            let ago = calendar.dateComponents([.day], from: incoming.date, to: now).day ?? 0
+            parts.append("They messaged \(Self.days(ago)) ago (\(incoming.channel.label)); that does not reset the clock.")
+        }
+        reason = parts.joined(separator: " ")
     }
 
-    static var utcCalendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        return calendar
-    }
+    static func days(_ count: Int) -> String { count == 1 ? "1 day" : "\(count) days" }
 }
 
 struct ReachOutPreferencesStore {
@@ -116,88 +167,18 @@ struct ReachOutPreferencesStore {
     func save(_ preferences: [String: ReachOutPreferences]) throws {
         defaults.set(try JSONEncoder().encode(preferences), forKey: key)
     }
-}
 
-/// Metadata from a completed, reconciled read. Import completion describes
-/// publication, never historical endpoint coverage or account-wide history.
-struct ContactImportMetadata: Equatable, Sendable {
-    var id: String
-    var sourceNamespace: String
-    var completed: Bool
-    var deleted = false
-}
-
-struct ContactParticipantMetadata: Equatable, Sendable {
-    var id: String
-    var eventID: String
-    var firstImportID: String
-    var role: String
-    var isSelf: Bool
-    var personID: String?
-    var deleted = false
-}
-
-struct ContactEventMetadata: Equatable, Sendable {
-    var id: String
-    var firstImportID: String
-    var occurredAt: Date?
-    var kind: String
-    var direction: String
-    var messageState: String?
-    var conversationKind: String
-    var expectedParticipantRows: Int
-    var participantCoverage: String
-    var participantCoverageReason: String
-    var callOutcome: String?
-    var durationSeconds: Double?
-    var needsReview = false
-    var deleted = false
-}
-
-enum ContactMetadataProjection {
-    /// The caller must supply ALL participant rows, including self, unresolved
-    /// and tombstoned rows. Matching separate rereads are best-known evidence,
-    /// not an atomic snapshot; automatic reminders remain gated independently.
-    static func interactions(event: ContactEventMetadata, participants: [ContactParticipantMetadata],
-                             imports: [ContactImportMetadata]) throws -> [ContactInteraction] {
-        var unique: [String: ContactParticipantMetadata] = [:]
-        for row in participants {
-            guard !row.id.isEmpty, row.eventID == event.id else { throw CircleConnectionError.invalidResponse }
-            if let previous = unique[row.id], previous != row { throw CircleConnectionError.invalidResponse }
-            unique[row.id] = row
-        }
-        var receipts: [String: ContactImportMetadata] = [:]
-        for row in imports {
-            guard !row.id.isEmpty, !row.sourceNamespace.isEmpty else { throw CircleConnectionError.invalidResponse }
-            if let previous = receipts[row.id], previous != row { throw CircleConnectionError.invalidResponse }
-            receipts[row.id] = row
-        }
-        let active = unique.values.filter { !$0.deleted }
-        let referenced = [event.firstImportID] + active.map(\.firstImportID)
-        guard !event.id.isEmpty, !event.deleted, !event.needsReview,
-              let occurredAt = event.occurredAt, occurredAt.timeIntervalSince1970.isFinite,
-              event.conversationKind == "direct", event.participantCoverage == "complete_for_event",
-              event.participantCoverageReason == "verified_event_endpoints",
-              event.expectedParticipantRows == active.count, active.count == 2,
-              referenced.allSatisfy({ receipts[$0]?.completed == true && receipts[$0]?.deleted == false }),
-              Set(referenced.compactMap { receipts[$0]?.sourceNamespace }).count == 1,
-              let own = active.first(where: \.isSelf), let other = active.first(where: { !$0.isSelf }),
-              let personID = other.personID, !personID.isEmpty, own.personID != personID else { return [] }
-        let ownRole: String, otherRole: String, kind: ContactInteractionKind
-        switch (event.kind, event.direction) {
-        case ("message", "outgoing") where event.messageState == "sent" && event.callOutcome == nil && event.durationSeconds == nil:
-            (ownRole, otherRole, kind) = ("sender", "recipient", .outgoingMessage)
-        case ("message", "incoming") where event.messageState == "received" && event.callOutcome == nil && event.durationSeconds == nil:
-            (ownRole, otherRole, kind) = ("recipient", "sender", .incomingMessage)
-        case ("call", "outgoing") where event.callOutcome == "answered" && event.messageState == nil:
-            (ownRole, otherRole, kind) = ("caller", "callee", .answeredCall)
-        case ("call", "incoming") where event.callOutcome == "answered" && event.messageState == nil:
-            (ownRole, otherRole, kind) = ("callee", "caller", .answeredCall)
-        default: return []
-        }
-        guard own.role == ownRole, other.role == otherRole,
-              event.durationSeconds.map({ $0.isFinite && $0 >= 0 }) ?? true else { return [] }
-        return [ContactInteraction(id: event.id, personID: personID, occurredAt: occurredAt, kind: kind,
-                                   verified: true, direct: true, participantsComplete: true, identityResolved: true)]
+    /// Unreadable reminder settings fall back to the private defaults (reminders stay per-person opt-in).
+    func loadReminders() -> ReminderSettings {
+        defaults.data(forKey: "reach-out-reminders-v1-\(profile)").flatMap { try? JSONDecoder().decode(ReminderSettings.self, from: $0) }
+            ?? ReminderSettings()
     }
+
+    func saveReminders(_ settings: ReminderSettings) {
+        defaults.set(try? JSONEncoder().encode(settings), forKey: "reach-out-reminders-v1-\(profile)")
+    }
+
+    /// Reminder requests already handed to the system, so a delivered one is never repeated.
+    func loadLedger() -> Set<String> { Set(defaults.stringArray(forKey: "reach-out-ledger-v1-\(profile)") ?? []) }
+    func saveLedger(_ ids: Set<String>) { defaults.set(ids.sorted(), forKey: "reach-out-ledger-v1-\(profile)") }
 }

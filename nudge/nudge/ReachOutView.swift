@@ -1,84 +1,187 @@
 import SwiftUI
 
-struct ReachOutView: View {
-    let graph: SocialGraph
-    let trackedIDs: Set<String>
-    @Binding var preferences: [String: ReachOutPreferences]
-    let settingsError: String?
-    var interactions: [ContactInteraction] = []
-    var history: ContactHistoryReadiness = .incomplete
-    @Environment(\.dismiss) private var dismiss
-    @State private var selectedPersonID: String?
+enum ReachOutScope: String, CaseIterable { case tracked = "Tracked", all = "All with history" }
 
-    private var people: [GraphPerson] { graph.people.filter { trackedIDs.contains($0.id) } }
+struct ReachOutTab: View {
+    let graph: SocialGraph
+    @Environment(ReachOutModel.self) private var model
+    @State private var scope: ReachOutScope?
+    @State private var selected: GraphPerson?
+    @State private var showReminders = false
+
+    private var effectiveScope: ReachOutScope { scope ?? (model.trackedIDs.isEmpty ? .all : .tracked) }
+
+    private var people: [GraphPerson] {
+        graph.people.filter { person in
+            person.id != graph.selfID && (model.trackedIDs.contains(person.id)
+                || (effectiveScope == .all && model.history?.channels[person.id] != nil))
+        }
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    if selectedPersonID != nil { Button("Back to list") { selectedPersonID = nil } }
-                    Text("Reach out").font(.title2.weight(.semibold))
-                    Spacer()
-                    Button("Close") { dismiss() }
+        let now = Date()
+        let rows = people.map { ($0, model.assessment($0.id, now: now)) }
+        NavigationStack {
+            List {
+                Section { ReachOutCoverageSummary() }
+                Section {
+                    Picker("Show", selection: Binding(get: { effectiveScope }, set: { scope = $0 })) {
+                        ForEach(ReachOutScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented).accessibilityIdentifier("reachout-scope")
+                    if effectiveScope == .tracked && model.trackedIDs.isEmpty {
+                        Text("Track people from the explorer to keep a short list here.").font(.callout).foregroundStyle(.secondary)
+                    }
+                    if let error = model.settingsError { Text(error).foregroundStyle(.red) }
                 }
-                if let settingsError { Text(settingsError).foregroundStyle(.red) }
-                if let id = selectedPersonID, let person = graph.byID[id] {
-                    personSettings(person)
-                } else {
-                    Text("Track people from the explorer to keep them here. Nearby alerts use their own location rules.")
-                        .font(.callout).foregroundStyle(.secondary)
-                    if people.isEmpty { Text("No tracked people yet").font(.headline) }
-                    ForEach(ReachOutBucket.allCases, id: \.self) { bucket in
-                        let members = people.filter { assessment($0.id).bucket == bucket }.sorted {
-                            let left = assessment($0.id).score, right = assessment($1.id).score
-                            return left == right ? $0.id < $1.id : left > right
-                        }
-                        if !members.isEmpty {
-                            Text(bucket.rawValue).font(.headline)
-                            ForEach(members) { person in
-                                Button { selectedPersonID = person.id } label: {
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text(person.name).font(.headline)
-                                        reason(assessment(person.id))
-                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                                }.buttonStyle(.bordered).accessibilityIdentifier("reachout-\(person.id)")
+                ForEach(ReachOutBucket.allCases, id: \.self) { bucket in
+                    let members = rows.filter { $0.1.bucket == bucket }.sorted { left, right in
+                        let l = left.1.score == 0 ? Double(model.settings(left.0.id).priority.rawValue) : left.1.score
+                        let r = right.1.score == 0 ? Double(model.settings(right.0.id).priority.rawValue) : right.1.score
+                        return l == r ? left.0.name.localizedStandardCompare(right.0.name) == .orderedAscending : l > r
+                    }
+                    if !members.isEmpty {
+                        Section {
+                            ForEach(members, id: \.0.id) { person, assessment in
+                                ReachOutRow(person: person, assessment: assessment, channels: model.history?.channels[person.id] ?? [],
+                                            sourceIDs: model.history?.contactIDs[person.id] ?? []) { selected = person }
                             }
+                        } header: {
+                            Text("\(bucket.rawValue) · \(members.count)").accessibilityIdentifier("reachout-group-\(bucket)")
                         }
                     }
                 }
-            }.padding(24)
+            }
+            .navigationTitle("Reach out")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showReminders = true } label: { Label("Reminder settings", systemImage: "bell.badge") }
+                        .accessibilityIdentifier("reminder-settings")
+                }
+            }
         }
-        .frame(minWidth: 300, idealWidth: 540, maxWidth: 650, minHeight: 480)
+        .sheet(item: $selected) { person in ReachOutPersonSheet(person: person) }
+        .sheet(isPresented: $showReminders) { ReminderSettingsSheet() }
+        // Tracking is edited in the explorer; read it fresh whenever this tab shows.
+        .onAppear { model.reload() }
     }
+}
 
-    private func assessment(_ id: String) -> ReachOutAssessment {
-        ReachOutAssessment(personID: id, interactions: interactions, history: history,
-                           settings: preferences[id] ?? ReachOutPreferences(), now: Date())
-    }
+struct ReachOutCoverageSummary: View {
+    @Environment(ReachOutModel.self) private var model
 
-    @ViewBuilder private func reason(_ value: ReachOutAssessment) -> some View {
-        if value.bucket == .historyIncomplete {
-            Text("History is unavailable or incomplete; no due claim is made.").font(.caption).foregroundStyle(.secondary)
-        } else if let due = value.dueAt {
-            Text("Due \(due.formatted(date: .abbreviated, time: .omitted)) for the chosen cadence.")
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let history = model.history {
+                if let refreshed = history.refreshedAt {
+                    Text("History refreshed \(refreshed.formatted(date: .abbreviated, time: .shortened))").font(.subheadline)
+                } else {
+                    Text("No direct conversations in the connected history yet.").font(.subheadline)
+                }
+                ForEach(history.sources, id: \.source) { source in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(source.label): \(source.state.rawValue) · read \(source.completedAt.formatted(date: .abbreviated, time: .shortened))")
+                        if let reason = source.reason, source.state != .complete { Text(reason).lineLimit(2) }
+                    }
+                    .font(.caption).foregroundStyle(source.state == .complete ? Color.secondary : Color.orange)
+                    .accessibilityElement(children: .combine)
+                }
+                if history.sources.isEmpty { Text("Import coverage is unknown.").font(.caption).foregroundStyle(.secondary) }
+            } else {
+                Text("Contact history is not connected. Groups show Unknown, never \u{201C}never contacted\u{201D}.").font(.subheadline)
+            }
+            if let failure = model.historyFailure { Text(failure).font(.caption).foregroundStyle(.red) }
+            Text(model.isPreview ? "Synthetic preview history." : "Missing or partial coverage means unknown, not never contacted.")
                 .font(.caption).foregroundStyle(.secondary)
         }
-        if let last = value.lastContact {
-            Text("Last qualifying contact: \(last.formatted(date: .abbreviated, time: .omitted))")
-                .font(.caption).foregroundStyle(.secondary)
+    }
+}
+
+struct ReachOutRow: View {
+    let person: GraphPerson
+    let assessment: ReachOutAssessment
+    let channels: [ChannelSummary]
+    let sourceIDs: [String]
+    let open: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: open) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(person.name).font(.headline)
+                        Spacer(minLength: 8)
+                        if let days = assessment.elapsedDays { Text("\(days)d").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary) }
+                    }
+                    Text(assessment.reason).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if let line = Self.channelLine(channels) { Text(line).font(.caption2).foregroundStyle(.secondary) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("reachout-\(person.id)")
+            ContactActionBar(person: person, sourceIDs: sourceIDs, compact: true)
         }
+        .padding(.vertical, 4)
     }
 
-    private func personSettings(_ person: GraphPerson) -> some View {
-        let settings = binding(person.id)
-        return VStack(alignment: .leading, spacing: 16) {
-            Text(person.name).font(.title.weight(.semibold))
-            if interactions.isEmpty { Text("No verified contact history is connected.").foregroundStyle(.secondary) }
-            reason(assessment(person.id))
-            Divider()
-            Text("Contact cadence").font(.headline)
+    /// Up to three channels, most recent activity first.
+    static func channelLine(_ channels: [ChannelSummary]) -> String? {
+        let style = Date.FormatStyle().month(.abbreviated).day()
+        let parts = channels.map { summary -> (Date, String) in
+            let events = [("sent", summary.lastSent), ("received", summary.lastReceived), ("answered", summary.lastAnsweredCall)]
+                .compactMap { label, date in date.map { (label, $0) } }
+            let text = events.map { "\($0.0) \($0.1.formatted(style))" }.joined(separator: ", ")
+            return (([summary.lastCall] + events.map { Optional($0.1) }).compactMap { $0 }.max() ?? .distantPast,
+                    "\(summary.channel.label): \(text.isEmpty ? "calls only" : text)")
+        }
+        guard !parts.isEmpty else { return nil }
+        return parts.sorted { $0.0 > $1.0 }.prefix(3).map(\.1).joined(separator: " · ")
+    }
+}
+
+struct ReachOutPersonSheet: View {
+    let person: GraphPerson
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form { ReachOutSections(person: person) }
+                .formStyle(.grouped)
+                .navigationTitle(person.name)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        #if os(macOS)
+        .frame(minWidth: 480, minHeight: 620)
+        #endif
+    }
+}
+
+/// Reach-out status, history per channel, coverage and settings for one person.
+struct ReachOutSections: View {
+    let person: GraphPerson
+    @Environment(ReachOutModel.self) private var model
+
+    var body: some View {
+        let assessment = model.assessment(person.id)
+        let channels = model.history?.channels[person.id] ?? []
+        let settings = Binding(get: { model.settings(person.id) }, set: { model.preferences[person.id] = $0 })
+        Section("Reach out") {
+            Text(assessment.bucket.rawValue).font(.headline).accessibilityIdentifier("reachout-status")
+            Text(assessment.reason).font(.callout)
+            ContactActionBar(person: person, sourceIDs: model.history?.contactIDs[person.id] ?? [])
+            Text("Opening a conversation does not count as contact. Numbers come from this device's Contacts and are never saved.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section("History by channel") {
+            if model.history == nil { Text("Contact history is not connected.").foregroundStyle(.secondary) }
+            else if channels.isEmpty { Text("No direct messages or calls in the connected history.").foregroundStyle(.secondary) }
+            ForEach(channels.sorted { $0.channel.rawValue < $1.channel.rawValue }, id: \.channel) { summary in
+                ChannelHistoryRow(summary: summary, coverage: model.history?.coverage(of: summary.channel) ?? [])
+            }
+        }
+        Section("Cadence and priority") {
             cadence(settings.cadence, prefix: "cadence")
-            Text("Priority").font(.headline)
             HStack {
                 ForEach(ContactPriority.allCases, id: \.self) { priority in
                     option(priority.label, selected: settings.wrappedValue.priority == priority, id: "priority-\(priority)") {
@@ -86,23 +189,26 @@ struct ReachOutView: View {
                     }
                 }
             }
-            Text("Reset the outreach clock after").font(.headline)
+        }
+        Section {
             resetToggle("A successfully sent direct message", kind: .outgoingMessage, settings: settings)
             resetToggle("An answered direct call", kind: .answeredCall, settings: settings)
             resetToggle("An explicitly logged hangout", kind: .hangout, settings: settings)
             resetToggle("A received direct message", kind: .incomingMessage, settings: settings)
-            Text("Only verified events with complete, resolved participants qualify. Opening a conversation does not count.")
-                .font(.caption).foregroundStyle(.secondary)
-            Divider()
-            Text("In-person hangouts").font(.headline)
+        } header: { Text("Reset the clock after") } footer: {
+            Text("Group conversations, unanswered calls and opening a conversation never count.")
+        }
+        Section {
             cadence(settings.hangoutCadence, prefix: "hangout-cadence")
-            Text("This cadence uses explicit hangout history, independently of calls and messages.")
-                .font(.caption).foregroundStyle(.secondary)
-            Divider()
-            Toggle("Reach-out reminders", isOn: settings.remindersEnabled)
             Toggle("Hangout reminders", isOn: settings.hangoutRemindersEnabled)
-            Text("Preferences are saved locally. Notification delivery is not connected yet.")
-                .font(.caption).foregroundStyle(.secondary)
+        } header: { Text("In-person hangouts") } footer: {
+            Text("Hangouts are not recorded yet, so this cadence has no due date and sends no reminders.")
+        }
+        Section("Reminders") {
+            Toggle("Reach-out reminders", isOn: Binding(get: { settings.wrappedValue.remindersEnabled }, set: { on in
+                Task { await model.enableReminders(on, for: person.id) }
+            })).accessibilityIdentifier("reminders-toggle")
+            if let message = model.reminderMessage { Text(message).font(.caption).foregroundStyle(.red) }
             if let until = settings.wrappedValue.snoozedUntil, until > Date() {
                 Text("Snoozed until \(until.formatted(date: .abbreviated, time: .omitted))")
                 Button("Clear snooze") { settings.wrappedValue.snoozedUntil = nil }
@@ -111,11 +217,8 @@ struct ReachOutView: View {
                     settings.wrappedValue.snoozedUntil = Calendar.current.date(byAdding: .day, value: 7, to: Date())
                 }
             }
-        }.disabled(settingsError != nil)
-    }
-
-    private func binding(_ id: String) -> Binding<ReachOutPreferences> {
-        Binding(get: { preferences[id] ?? ReachOutPreferences() }, set: { preferences[id] = $0 })
+        }
+        .disabled(model.settingsError != nil)
     }
 
     private func cadence(_ value: Binding<ContactCadence>, prefix: String) -> some View {
@@ -138,5 +241,100 @@ struct ReachOutView: View {
         Toggle(label, isOn: Binding(get: { settings.wrappedValue.resetKinds.contains(kind) }, set: { on in
             if on { settings.wrappedValue.resetKinds.insert(kind) } else { settings.wrappedValue.resetKinds.remove(kind) }
         }))
+    }
+}
+
+struct ChannelHistoryRow: View {
+    let summary: ChannelSummary
+    let coverage: [SourceCoverage]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(summary.channel.label).font(.headline)
+            Group {
+                if summary.sent + summary.received > 0 || summary.lastSent != nil || summary.lastReceived != nil {
+                    line("Sent", summary.lastSent, count: summary.sent)
+                    line("Received", summary.lastReceived, count: summary.received)
+                }
+                if summary.callsAnswered + summary.callsMissed > 0 || summary.lastCall != nil {
+                    line("Answered call", summary.lastAnsweredCall, count: summary.callsAnswered,
+                         extra: summary.answeredSeconds.map { " (\(Duration.seconds($0).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated))))" })
+                    if summary.callsMissed > 0 { Text("Missed calls: \(summary.callsMissed)") }
+                    if let call = summary.lastCall { Text("Last call of any kind: \(call.formatted(date: .abbreviated, time: .omitted))") }
+                }
+                Text(window).foregroundStyle(.secondary)
+                ForEach(coverage, id: \.source) { source in
+                    Text("\(source.label) import: \(source.state.rawValue)").foregroundStyle(source.state == .complete ? Color.secondary : Color.orange)
+                }
+                if let review = summary.needsReview { Text("Needs review: \(review)").foregroundStyle(.orange) }
+            }.font(.caption)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("history-\(summary.channel.rawValue)")
+    }
+
+    private var window: String {
+        let style = Date.FormatStyle(date: .abbreviated, time: .omitted)
+        switch (summary.coverageStart, summary.coverageEnd) {
+        case (let start?, let end?): return "Known from \(start.formatted(style)) through \(end.formatted(style))"
+        case (nil, let end?): return "Known through \(end.formatted(style))"
+        default: return "Coverage window unknown"
+        }
+    }
+
+    private func line(_ label: String, _ date: Date?, count: Int, extra: String? = nil) -> some View {
+        Text("\(label): \(date.map { $0.formatted(date: .abbreviated, time: .omitted) } ?? "none in coverage")\(extra ?? "") · \(count) total")
+    }
+}
+
+struct ReminderSettingsSheet: View {
+    @Environment(ReachOutModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        @Bindable var model = model
+        NavigationStack {
+            Form {
+                Section {
+                    Toggle("Hide names on the lock screen", isOn: $model.reminders.hideNames).accessibilityIdentifier("hide-names")
+                } footer: { Text("Reminders then read \u{201C}Someone in Circle is due for a reach-out.\u{201D}") }
+                Section {
+                    Picker("Quiet from", selection: $model.reminders.quietStartHour) { hours }
+                    Picker("Quiet until", selection: $model.reminders.quietEndHour) { hours }
+                } header: { Text("Quiet hours") } footer: {
+                    Text("A reminder due in quiet hours waits until they end. The same hour twice turns quiet hours off.")
+                }
+                Section {
+                    Text("Reminders are off by default. Turn them on per person in their reach-out settings. They are local notifications on this device, recomputed when new history arrives; there is no push server.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Reminders")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        #if os(macOS)
+        .frame(minWidth: 420, minHeight: 420)
+        #endif
+    }
+
+    private var hours: some View {
+        ForEach(0..<24, id: \.self) { hour in
+            Text(Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date())!.formatted(date: .omitted, time: .shortened)).tag(hour)
+        }
+    }
+}
+
+/// Recomputes local reminders whenever history or settings change.
+struct ReachOutReminderScheduling: ViewModifier {
+    let model: ReachOutModel
+    let people: [GraphPerson]
+
+    func body(content: Content) -> some View {
+        content
+            .task(id: "\(model.revision)|\(model.history?.refreshedAt?.timeIntervalSince1970 ?? 0)") {
+                await model.schedule(people: people)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .circleReachOutChanged)) { _ in model.reload() }
     }
 }

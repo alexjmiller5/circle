@@ -2,23 +2,32 @@ import SwiftUI
 
 struct ContentView: View {
     var preview = false
-    @State private var tab = "explorer"
 
     var body: some View {
-        if preview {
-            CircleTabs(explorer: ExplorerView(graph: PreviewGraph.graph),
-                       map: PeopleMapView(graph: PreviewGraph.graph, locator: CirclePlaceLocator(cache: nil, geocoder: CircleSystemGeocoder()),
-                                          photos: nil, isPreview: true),
-                       tab: $tab)
-        } else {
-            ConnectedCircleView()
-        }
+        if preview { PreviewCircleView() } else { ConnectedCircleView() }
     }
 }
 
-struct CircleTabs<Explorer: View, PeopleMap: View>: View {
+/// Explicit synthetic development entry point; never presented as live data.
+struct PreviewCircleView: View {
+    @State private var tab = "explorer"
+    @State private var reachOut = ReachOutModel(profile: "preview", history: PreviewGraph.history)
+
+    var body: some View {
+        CircleTabs(explorer: ExplorerView(graph: PreviewGraph.graph),
+                   map: PeopleMapView(graph: PreviewGraph.graph, locator: CirclePlaceLocator(cache: nil, geocoder: CircleSystemGeocoder()),
+                                      photos: nil, isPreview: true),
+                   reachOut: ReachOutTab(graph: PreviewGraph.graph),
+                   tab: $tab)
+            .environment(reachOut)
+            .modifier(ReachOutReminderScheduling(model: reachOut, people: PreviewGraph.graph.people))
+    }
+}
+
+struct CircleTabs<Explorer: View, PeopleMap: View, ReachOut: View>: View {
     let explorer: Explorer
     let map: PeopleMap
+    let reachOut: ReachOut
     /// Owned above any view whose identity resets on refresh.
     @Binding var tab: String
 
@@ -26,6 +35,7 @@ struct CircleTabs<Explorer: View, PeopleMap: View>: View {
         TabView(selection: $tab) {
             explorer.tabItem { Label("Explorer", systemImage: "circle.hexagongrid") }.tag("explorer")
             map.tabItem { Label("Map", systemImage: "map") }.tag("map")
+            reachOut.tabItem { Label("Reach out", systemImage: "bubble.left.and.bubble.right") }.tag("reachout")
         }
     }
 }
@@ -36,10 +46,6 @@ struct ExplorerView: View {
     @State private var query = ""
     @State private var trackedIDs: Set<String>
     private let tracking: TrackingPreferencesStore
-    @State private var reachOutPreferences: [String: ReachOutPreferences]
-    @State private var settingsError: String?
-    @State private var showReachOut = false
-    private let reachOutStore: ReachOutPreferencesStore
     @FocusState private var searchFocused: Bool
     @State private var centerRequest = 0
     @State private var positions: [String: GraphPoint]
@@ -55,19 +61,11 @@ struct ExplorerView: View {
         self.preferences = preferences
         let tracking = TrackingPreferencesStore(defaults: preferences, profile: profile)
         self.tracking = tracking
-        let reachOutStore = ReachOutPreferencesStore(defaults: preferences, profile: profile)
-        self.reachOutStore = reachOutStore
         if isPreview && ProcessInfo.processInfo.arguments.contains("--reset-explorer-preferences") {
             preferences.removeObject(forKey: preferenceKey)
             tracking.save([])
-            try? reachOutStore.save([:])
         }
         _trackedIDs = State(initialValue: tracking.load())
-        do { _reachOutPreferences = State(initialValue: try reachOutStore.load()) }
-        catch {
-            _reachOutPreferences = State(initialValue: [:])
-            _settingsError = State(initialValue: "Saved preferences could not be read. Editing is paused to preserve them.")
-        }
         var initial = ExplorerState(selfID: graph.selfID)
         ExplorerPreferences(values: preferences.dictionary(forKey: preferenceKey) ?? [:]).apply(to: &initial)
         if ProcessInfo.processInfo.arguments.contains("--reduce-motion") { initial.motion = false }
@@ -113,14 +111,6 @@ struct ExplorerView: View {
         }
         .background(GraphTheme.surface)
         .tint(GraphTheme.accent)
-        .sheet(isPresented: $showReachOut) {
-            ReachOutView(graph: graph, trackedIDs: trackedIDs, preferences: $reachOutPreferences, settingsError: settingsError)
-        }
-        .onChange(of: reachOutPreferences) { _, values in
-            guard settingsError == nil else { return }
-            do { try reachOutStore.save(values) }
-            catch { settingsError = "Preferences could not be saved." }
-        }
         .onChange(of: trackedIDs) { _, ids in tracking.save(ids) }
         .onChange(of: state) { old, new in
             preferences.set(ExplorerPreferences(state: new).values, forKey: preferenceKey)
@@ -136,7 +126,6 @@ struct ExplorerView: View {
             HStack {
                 Text("Circle").font(.system(.title3, design: .rounded).weight(.semibold))
                 Spacer()
-                Button("Reach out") { showReachOut = true }.buttonStyle(.bordered)
                 Text(isPreview ? "Synthetic preview" : "People").font(.caption).foregroundStyle(.secondary)
             }
             Text("Your people").font(.system(.largeTitle, design: .rounded).weight(.semibold))

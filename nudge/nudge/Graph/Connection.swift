@@ -42,6 +42,9 @@ struct StoredCircleConnection: Codable, Sendable {
     private(set) var cleanupMessage: String?
     private(set) var refreshedAt: Date?
     private(set) var cacheMessage: String?
+    /// Contact history from the maintained summaries; nil until the profile grants it and a read succeeds.
+    private(set) var history: CommunicationHistory?
+    private(set) var historyFailure: String?
     private let cache: CircleGraphCache?
     private let store: any CircleCredentialStore
     private let candidate: () throws -> CircleDeviceCandidate
@@ -62,7 +65,7 @@ struct StoredCircleConnection: Codable, Sendable {
         if let connection {
             do {
                 if let saved = try cache?.load(profile: connection.preferenceKey) {
-                    graph = saved.graph; refreshedAt = saved.refreshedAt
+                    graph = saved.graph; refreshedAt = saved.refreshedAt; history = saved.history
                 }
             } catch { cacheMessage = "The saved graph could not be read. Refresh to recover it." }
             await refresh()
@@ -134,7 +137,9 @@ struct StoredCircleConnection: Codable, Sendable {
         let canonical = try policy.canonicalConfig(JSONSerialization.data(withJSONObject: rawConfig))
         guard let config = try JSONSerialization.jsonObject(with: canonical) as? [String: Any],
               config["namespace"] as? String == "circle.reader", let fields = config["bindings"] as? [String: Any],
-              Set(fields.keys).subtracting(["photos"]) == ["people", "relations", "locations"] else { throw CircleConnectionError.invalidConfiguration }
+              Set(fields.keys).subtracting(["photos", "summaries", "imports", "contacts"]) == ["people", "relations", "locations"] else {
+            throw CircleConnectionError.invalidConfiguration
+        }
         let bindings = try JSONDecoder().decode(CirclePeopleBindings.self, from: JSONSerialization.data(withJSONObject: fields))
         try bindings.validate()
         let profile = CircleReaderProfile(id: "circle-reader", scopes: bindings.scopes)
@@ -158,9 +163,23 @@ struct StoredCircleConnection: Codable, Sendable {
             try requireCurrent(id)
             let newGraph = try await CirclePeopleReader(client: client).graph(bindings: validated.bindings, selfID: graph?.selfID)
             try requireCurrent(id)
-            graph = newGraph; refreshedAt = Date(); busy = false
+            // History is read after People and published on its own: a failed read keeps the last history.
+            var newHistory = history
+            if let summaries = validated.bindings.summaries, let imports = validated.bindings.imports {
+                do {
+                    newHistory = try await CommunicationHistoryReader(client: client)
+                        .read(summaries: summaries, imports: imports, contacts: validated.bindings.contacts)
+                    historyFailure = nil
+                } catch is CancellationError { throw CancellationError() }
+                catch { historyFailure = "Contact history could not be refreshed. \(error.localizedDescription)" }
+                try requireCurrent(id)
+            } else {
+                newHistory = nil
+                historyFailure = nil
+            }
+            graph = newGraph; history = newHistory; refreshedAt = Date(); busy = false
             do {
-                try cache?.save(newGraph, refreshedAt: refreshedAt!, profile: connection.preferenceKey)
+                try cache?.save(newGraph, history: newHistory, refreshedAt: refreshedAt!, profile: connection.preferenceKey)
                 cacheMessage = nil
             } catch { cacheMessage = "People loaded, but the offline copy could not be saved." }
         } catch {
@@ -173,7 +192,7 @@ struct StoredCircleConnection: Codable, Sendable {
         guard let graph, let connection, let refreshedAt,
               personID == nil || graph.byID[personID!] != nil else { throw CircleConnectionError.invalidConfiguration }
         let selected = SocialGraph(people: graph.people, relations: graph.relations, selfID: personID)
-        try cache?.save(selected, refreshedAt: refreshedAt, profile: connection.preferenceKey)
+        try cache?.save(selected, history: history, refreshedAt: refreshedAt, profile: connection.preferenceKey)
         self.graph = selected
     }
 
@@ -201,7 +220,7 @@ struct StoredCircleConnection: Codable, Sendable {
             try cache?.remove(profile: connection.preferenceKey)
             try store.clear()
             cacheMessage = nil
-            self.connection = nil; graph = nil; refreshedAt = nil; failure = nil
+            self.connection = nil; graph = nil; history = nil; historyFailure = nil; refreshedAt = nil; failure = nil
         } catch { failure = error.localizedDescription }
     }
 

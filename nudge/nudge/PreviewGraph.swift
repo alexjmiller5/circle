@@ -19,4 +19,38 @@ enum PreviewGraph {
         }
         return SocialGraph(people: people, relations: relations, selfID: people[0].id)
     }()
+
+    /// Synthetic contact history relative to launch, covering every reach-out group.
+    static let history: CommunicationHistory = {
+        let now = Date(), day = 86_400.0
+        func ago(_ days: Double) -> Date { now.addingTimeInterval(-days * day) }
+        let start = ago(3_000), refreshed = ago(0.1)
+        func summary(_ channel: CommunicationChannel, sent: Double? = nil, received: Double? = nil,
+                     answered: Double? = nil, review: String? = nil) -> ChannelSummary {
+            ChannelSummary(channel: channel, lastSent: sent.map(ago), lastReceived: received.map(ago), lastAnsweredCall: answered.map(ago),
+                           answeredSeconds: answered.map { _ in 420 }, lastCall: answered.map(ago),
+                           sent: sent == nil ? 0 : 12, received: received == nil ? 0 : 9, callsAnswered: answered == nil ? 0 : 3,
+                           callsMissed: answered == nil ? 0 : 1, coverageStart: start, coverageEnd: refreshed, refreshedAt: refreshed,
+                           needsReview: review)
+        }
+        var history = CommunicationHistory()
+        history.channels = [
+            "person-01": [summary(.imessage, sent: 40, received: 3), summary(.phone, answered: 52)],
+            "person-02": [summary(.phone, answered: 24)],
+            "person-03": [summary(.sms, sent: 5, received: 5)],
+            "person-05": [summary(.whatsapp, sent: 70, received: 64)],
+            "person-06": [summary(.imessage, sent: 33, received: 31)],
+            "person-07": [summary(.facetimeVideo, answered: 10)],
+            "person-08": [summary(.imessage, received: 2, review: "An event resolved to a different person at import.")]
+        ]
+        history.sources = [
+            SourceCoverage(source: "apple_messages", state: .complete, reason: nil, completedAt: refreshed, firstEvent: start),
+            SourceCoverage(source: "apple_calls", state: .complete, reason: nil, completedAt: refreshed, firstEvent: ago(450)),
+            SourceCoverage(source: "whatsapp_messages", state: .partial, reason: "The desktop store is a partial mirror of the phone.",
+                           completedAt: refreshed, firstEvent: ago(2_900)),
+            SourceCoverage(source: "whatsapp_calls", state: .partial, reason: "The desktop store is a partial mirror of the phone.",
+                           completedAt: refreshed, firstEvent: ago(200))
+        ]
+        return history
+    }()
 }

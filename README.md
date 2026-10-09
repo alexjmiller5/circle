@@ -15,9 +15,9 @@ Life Data enrollment. A complete refresh replaces the graph; failed refreshes
 preserve its private offline copy. The **Map** tab pins people at their single
 current base, filters by circle and groups circles as where you met. A person
 sheet shows circles, base history, hometown, presence and the newest profile
-photo per platform. **Contact-history priorities, current presence, hometown
-and notification delivery are not connected yet.** The development preview
-contains only explicitly labeled synthetic people and locations. Shared circle
+photo per platform, then the person's reach-out history and settings. **Current
+presence and hometown are not connected yet.** The development preview
+contains only explicitly labeled synthetic people, locations and contact history. Shared circle
 membership does not imply friendship; residence and current presence are shown
 separately, with missing facts marked Unknown.
 
@@ -110,17 +110,33 @@ cached by it; a photo stored outside the granted folders is labelled rather
 than requested. A flat map cannot frame people on opposite sides of the world
 at once; pan to see the rest.
 
-## Contact metadata reader
+## Reach out
 
-The read-only engine supports the service-owned 57-column metadata contract.
-It completes all authorized pages, checks import publication and coverage,
-retains self and unresolved participants, and rereads the same dependencies.
-Observed changes or failed dependencies retract the result to pending. Matching
-reads are provisional, not an atomic snapshot or proof of complete history.
-Only source-proven direct messages and answered calls with verified endpoints
-and resolved identity qualify. Automatic reminders remain disabled for these
-provisional results. History enrollment and live UI integration are pending the
-upstream feed; the existing People connection grants no communication reads.
+The **Reach out** tab reads the service's maintained per-person, per-channel
+communication summaries (iMessage, SMS, RCS, phone, FaceTime audio and video,
+WhatsApp) and the import runs behind them. For each person it takes the newest
+sent message, answered call and received message across channels. By default
+a sent direct message, an answered direct call or a logged hangout resets the
+clock; received messages are shown and reset it only if you choose. People are
+grouped as Due now, Not contacted in 1 month, Not contacted in 3 weeks, History
+unknown, Snoozed and In touch, each with the reason: time since the last
+qualifying contact, cadence and due date, priority, snooze, and any newer
+incoming message. No qualifying event in the known history is shown as
+unknown, never as "never contacted", with each import's coverage (complete or
+partial, and why) and the last refresh time.
+
+Message, Call, WhatsApp and FaceTime open that app. The phone number or email
+comes from this device's Contacts when you tap: the person's linked address
+card first, otherwise a name match you choose from. Nothing is stored, and
+opening a conversation never counts as contact. When an app is missing, Circle
+tries its fallback (WhatsApp's web link, FaceTime audio for calls on the Mac)
+and otherwise says so.
+
+Reminders are local notifications, off until you enable them for a person.
+Quiet hours delay them, an option hides names on the lock screen, and Snooze
+for a week works from the notification. A fresh qualifying contact replaces a
+pending reminder; a delivered one is not repeated. Hangouts have no recorded
+source yet, so the hangout cadence has no due date.
 
 ## City-only arrival confirmation
 
@@ -144,9 +160,12 @@ Its output contains private contact metadata and must stay outside git.
 
 ## Verification
 
-Pure Swift tests cover contact qualification, calendar cadence, incomplete
-history, retractions, preference isolation, relationship direction, overlapping groups, unknown
+Pure Swift tests cover the summary reader (tombstones, identity, coverage),
+reset rules, unknown coverage, groups and reasons, calendar cadence, reminder
+planning with a fixed clock, quiet hours, deep links, preference isolation, relationship direction, overlapping groups, unknown
 locations, focus restoration, cyclic/disconnected graphs, 1,500-person layouts,
 validated preferences and camera bounds. UI tests cover normal/preview launch,
 search, layouts, back navigation, city modes, preference restoration, tracking,
-reach-out settings and gestures on macOS and iOS.
+reach-out groups, reasons and settings, and gestures on macOS and iOS. An
+opt-in iOS simulator smoke opens each deep link through a synthetic contact
+card and captures a delivered reminder.

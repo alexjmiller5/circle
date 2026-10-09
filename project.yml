@@ -26,6 +26,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_APP_SANDBOX: YES
         ENABLE_OUTGOING_NETWORK_CONNECTIONS: YES
+        ENABLE_RESOURCE_ACCESS_CONTACTS: YES
+        INFOPLIST_KEY_NSContactsUsageDescription: "Circle reads a person's phone number or email from Contacts only when you start a message or call. Nothing is saved."
         ENABLE_HARDENED_RUNTIME: YES
   CircleUITests:
     type: bundle.ui-testing

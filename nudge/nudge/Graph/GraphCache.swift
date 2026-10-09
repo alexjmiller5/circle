@@ -10,6 +10,8 @@ struct CircleGraphCache: Sendable {
         let relations: [GraphRelation]
         let selfID: String?
         let refreshedAt: Date
+        /// Optional so offline copies saved before contact history existed still load.
+        var history: CommunicationHistory? = nil
         var graph: SocialGraph { SocialGraph(people: people, relations: relations, selfID: selfID) }
     }
 
@@ -43,11 +45,11 @@ struct CircleGraphCache: Sendable {
         return snapshot
     }
 
-    func save(_ graph: SocialGraph, refreshedAt: Date, profile: String) throws {
+    func save(_ graph: SocialGraph, history: CommunicationHistory? = nil, refreshedAt: Date, profile: String) throws {
         let path = try file(profile)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
-        let snapshot = Snapshot(people: graph.people, relations: graph.relations, selfID: graph.selfID, refreshedAt: refreshedAt)
+        let snapshot = Snapshot(people: graph.people, relations: graph.relations, selfID: graph.selfID, refreshedAt: refreshedAt, history: history)
         try JSONEncoder().encode(snapshot).write(to: path, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
     }
