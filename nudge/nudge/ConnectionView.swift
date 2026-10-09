@@ -15,6 +15,7 @@ struct ConnectedCircleView: View {
     @State private var connecting: Task<Void, Never>?
     @State private var showConnection = false
     @State private var identityError: String?
+    @State private var tab = "explorer"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,7 +30,9 @@ struct ConnectedCircleView: View {
                     Button("Refresh") { Task { await model.refresh() } }.disabled(model.busy)
                 }.padding(12)
                 if model.failure != nil || model.cacheMessage != nil || model.graph?.selfID == nil || showConnection { connectionPanel }
-                ExplorerView(graph: graph, profile: connection.preferenceKey)
+                CircleTabs(explorer: ExplorerView(graph: graph, profile: connection.preferenceKey),
+                           map: PeopleMapView(graph: graph, locator: Self.locator(connection), photos: Self.photos(connection), isPreview: false),
+                           tab: $tab)
                     .id("\(model.refreshedAt?.timeIntervalSince1970 ?? 0):\(graph.selfID ?? "")")
             } else {
                 ScrollView {
@@ -44,6 +47,19 @@ struct ConnectedCircleView: View {
             }
         }
         .task { await model.restore() }
+    }
+
+    private static func locator(_ connection: StoredCircleConnection) -> CirclePlaceLocator {
+        CirclePlaceLocator(cache: (try? CircleGraphCache.application.placesFile(profile: connection.preferenceKey)).map(CircleGeocodeCache.init(file:)),
+                           geocoder: CircleSystemGeocoder())
+    }
+
+    /// Photos read through the connection's own credential, only under its granted prefixes.
+    private static func photos(_ connection: StoredCircleConnection) -> CirclePhotoLoader? {
+        guard let prefixes = connection.bindings.photos?.files,
+              let client = try? CircleHTTPTransport(endpoint: connection.endpoint, token: connection.token) else { return nil }
+        return CirclePhotoLoader(client: client, prefixes: prefixes,
+                                 cache: (try? CircleGraphCache.application.photosDirectory(profile: connection.preferenceKey)).map(CirclePhotoCache.init(directory:)))
     }
 
     private var connectionPanel: some View {
@@ -75,7 +91,7 @@ struct ConnectedCircleView: View {
                 TextField("Service URL", text: $endpoint)
                     .textFieldStyle(.roundedBorder).accessibilityIdentifier("Service URL")
                     .disabled(model.busy)
-                Text("Circle requests names, circles, recorded relationships and residence history. Approval happens in your service; Circle never asks for an operator token.")
+                Text("Circle requests names, circles, recorded relationships, residence history and profile photos. Approval happens in your service; Circle never asks for an operator token.")
                     .font(.caption).foregroundStyle(.secondary)
                 if let url = model.approvalURL {
                     Link("Approve read-only access", destination: url).accessibilityValue(url.absoluteString)

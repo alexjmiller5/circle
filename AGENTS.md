@@ -14,9 +14,13 @@ for arrival and departure, and emits once per confirmed visit. It persists
 per person/profile; unknown or paused readings never prove departure. Source
 freshness has no default until collector cadence is measured. This logic is
 not connected to a live feed or notification delivery.
-Contact-history enrollment and UI integration, current presence, photos and
-notification delivery are not implemented. Never imply preview data
-is live.
+The Map tab pins each person with exactly one current base (city-level,
+geocoded on device), filters by circle, lists circles as met-where groups and
+opens a person sheet: circles, base history, hometown (Unknown: no granted
+column carries it), presence (Unknown until the collector feed is connected)
+and the newest photo per platform. Contact-history enrollment and UI
+integration, current presence and notification delivery are not implemented.
+Never imply preview data is live.
 
 ## Build and verification
 
@@ -46,7 +50,8 @@ outside cloud-synced folders. UI automation permissions are native user state.
 ## Source map
 
 - `nudge/nudge/Graph/`: graph values, layouts, preferences, native enrollment, bounded HTTP reads,
-  secure Keychain storage and private cache.
+  secure Keychain storage and private cache. `PeopleMap.swift`: map pins, geocode
+  cache, photo choice and the content-addressed photo cache.
 - `nudge/nudge/`: native views and explicit synthetic development fixture.
 - `GraphTests/`: Swift Testing, including large graphs and invalid preferences.
 - `nudge/nudgeUITests/`: real native interactions through XCTest.
@@ -58,6 +63,10 @@ outside cloud-synced folders. UI automation permissions are native user state.
 Keep canonical identity and recorded direction. Shared circles never imply
 friendship. Base city is not current presence. Unknown is explicit. Views
 cache layout positions; no all-pairs force layout per animation frame.
+Circles are met-where labels and are never plotted as residence; they carry
+no place flag, so the map does not geocode circle names. Hometown stays
+Unknown unless a granted column carries it. There is no preferred-photo flag:
+show the newest `fetched_at` per platform and let the user pick.
 
 All personal records, credentials, transcripts, contact exports and raw task
 snapshots stay outside git. Ignored `designs/` may contain private snapshots;
@@ -68,10 +77,13 @@ preview preferences use a separate key from connected profiles.
 
 Circle is a dedicated read-only Life Data consumer through its supported API.
 The service owns the `circle-reader` profile and `circle.reader` table/column
-bindings; personal schema and values never ship in this repo. The approved
-reader requires exactly the 16 projected columns modeled by
-`CirclePeopleBindings`. No broad token, schema pull, replica sync, writes,
-photos or streams follow from that grant. Each device enrolls its own credential
+bindings; personal schema and values never ship in this repo. The reader
+requires exactly the grants `CirclePeopleBindings.scopes` derives: projected
+columns for people, relations, locations and the optional photos binding, plus
+one `files:read:<prefix>` per photo binding `files` prefix (live: 24 columns and
+`photos/people/`). Photos are requested only for keys under a granted prefix;
+other keys show as stored outside Circle's access without a request. No broad
+token, schema pull, replica sync, writes or streams follow from that grant. Each device enrolls its own credential
 and keeps it in native Keychain storage. Service rotation/revision changes
 require explicit reenrollment, never a wider fallback.
 
@@ -82,11 +94,15 @@ full-coverage claim. Only stream records accept bounded query parameters. No
 stream enrollment UI or live credential is connected.
 
 Use canonical Life Core policy via the pinned bundled JavaScript resource;
-`scripts/bundle_life_core.py` rebuilds it. Never duplicate its validation policy
+`scripts/bundle_life_core.py` rebuilds it. File grants need a pin whose scope
+grammar accepts `files:` (the current pin does); an older pin rejects such a
+profile at approval and revokes the candidate. Never duplicate its validation policy
 in Swift. Publish only complete validated reads. Failed refreshes preserve the
 last graph and show an error; independent table pages are not a snapshot.
 Cache lives under Application Support with private permissions and never
-revives current presence. Disconnect clears it after confirmed revocation;
+revives current presence. Per profile: `<key>.json` graph, `<key>.places.json`
+geocode results (misses retried after 7 days, failures never cached) and
+`<key>.photos/<sha256>` bytes verified on every read. Disconnect clears it after confirmed revocation;
 401 alone is not proof an unapproved candidate cannot be approved later.
 
 Use `just gen`, which resolves XcodeGen's real binary so its bundled settings

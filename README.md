@@ -12,8 +12,11 @@ history stays explicit. Preview preferences are isolated from connected data.
 
 Normal launch offers a read-only People connection through browser-approved
 Life Data enrollment. A complete refresh replaces the graph; failed refreshes
-preserve its private offline copy. **Contact-history priorities, current
-presence, photos and notification delivery are not connected yet.** The development preview
+preserve its private offline copy. The **Map** tab pins people at their single
+current base, filters by circle and groups circles as where you met. A person
+sheet shows circles, base history, hometown, presence and the newest profile
+photo per platform. **Contact-history priorities, current presence, hometown
+and notification delivery are not connected yet.** The development preview
 contains only explicitly labeled synthetic people and locations. Shared circle
 membership does not imply friendship; residence and current presence are shown
 separately, with missing facts marked Unknown.
@@ -68,10 +71,11 @@ its generated device credential in the native Keychain. The operator configures
 `circle-reader`; customers never enter table names or an operator token.
 
 The service-owned `circle.reader` configuration binds the logical people,
-relations and locations fields documented in `CirclePeopleBindings`. Its exact
-16 column grants cover identity, display name, circles, directed relationships,
-residence claims and tombstones. It grants no writes, file reads, messages,
-streams, schema or replica synchronization. Circle checks the canonical Life
+relations, locations and optional photos fields documented in
+`CirclePeopleBindings`. Its column grants cover identity, display name,
+circles, directed relationships, residence claims, photo records and
+tombstones; photo bytes come only from the configured file prefixes. It grants
+no writes, messages, streams, schema or replica synchronization. Circle checks the canonical Life
 Core enrollment policy, exact grants and profile revision before reading.
 
 Choose **My person record** to anchor your graph without guessing identity.
@@ -92,6 +96,19 @@ The bundled pure policy is pinned by `scripts/bundle_life_core.py`. Rebuild it
 from the script's pinned clean Life Data revision with `--source <checkout>`;
 networking and secure storage remain native. Synthetic fixtures never contact
 or modify the real service.
+
+## Map
+
+Bases are city and country text, geocoded on the device one at a time and
+cached privately per connection, so pins are city-level and people sharing a
+base are spread apart to stay tappable. People with no current base, or with
+conflicting current bases, stay unpinned and are counted. Circles describe how
+and where you met, so the map never plots them as homes. Presence stays
+Unknown until a source with a freshness policy is connected. Photos load
+through the connection's own credential, verified against their SHA-256 and
+cached by it; a photo stored outside the granted folders is labelled rather
+than requested. A flat map cannot frame people on opposite sides of the world
+at once; pan to see the rest.
 
 ## Contact metadata reader
 

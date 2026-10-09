@@ -2,12 +2,30 @@ import SwiftUI
 
 struct ContentView: View {
     var preview = false
+    @State private var tab = "explorer"
 
     var body: some View {
         if preview {
-            ExplorerView(graph: PreviewGraph.graph)
+            CircleTabs(explorer: ExplorerView(graph: PreviewGraph.graph),
+                       map: PeopleMapView(graph: PreviewGraph.graph, locator: CirclePlaceLocator(cache: nil, geocoder: CircleSystemGeocoder()),
+                                          photos: nil, isPreview: true),
+                       tab: $tab)
         } else {
             ConnectedCircleView()
+        }
+    }
+}
+
+struct CircleTabs<Explorer: View, PeopleMap: View>: View {
+    let explorer: Explorer
+    let map: PeopleMap
+    /// Owned above any view whose identity resets on refresh.
+    @Binding var tab: String
+
+    var body: some View {
+        TabView(selection: $tab) {
+            explorer.tabItem { Label("Explorer", systemImage: "circle.hexagongrid") }.tag("explorer")
+            map.tabItem { Label("Map", systemImage: "map") }.tag("map")
         }
     }
 }

@@ -8,6 +8,26 @@ struct GraphPerson: Identifiable, Equatable, Codable, Sendable {
     var baseCountry: String? = nil
     // A future adapter must supply only presence accepted by the explicit freshness policy.
     var currentCity: String? = nil
+    // Optional so offline copies saved before these fields existed still load.
+    var residences: [GraphResidence]? = nil
+    var photos: [GraphPhoto]? = nil
+}
+
+/// One residence claim; null `end` means a current base.
+struct GraphResidence: Equatable, Codable, Sendable {
+    let city: String?
+    let country: String?
+    let start: String?
+    let end: String?
+}
+
+/// One retained profile photo; the key is read through the authorized file service.
+struct GraphPhoto: Equatable, Codable, Sendable {
+    let platform: String
+    let key: String
+    let sha256: String?
+    let fetchedAt: String?
+    let updatedAt: String?
 }
 
 struct GraphRelation: Equatable, Codable, Sendable {

@@ -20,6 +20,16 @@ struct CircleGraphCache: Sendable {
         return directory.appendingPathComponent(profile + ".json")
     }
 
+    /// Geocoded bases for this profile, beside its graph and removed with it.
+    func placesFile(profile: String) throws -> URL {
+        directory.appendingPathComponent(try file(profile).deletingPathExtension().lastPathComponent + ".places.json")
+    }
+
+    /// Content-addressed photo bytes for this profile.
+    func photosDirectory(profile: String) throws -> URL {
+        directory.appendingPathComponent(try file(profile).deletingPathExtension().lastPathComponent + ".photos", isDirectory: true)
+    }
+
     func load(profile: String) throws -> Snapshot? {
         let path = try file(profile)
         guard FileManager.default.fileExists(atPath: path.path) else { return nil }
@@ -43,7 +53,9 @@ struct CircleGraphCache: Sendable {
     }
 
     func remove(profile: String) throws {
-        let path = try file(profile)
-        if FileManager.default.fileExists(atPath: path.path) { try FileManager.default.removeItem(at: path) }
+        for path in [try file(profile), try placesFile(profile: profile), try photosDirectory(profile: profile)]
+        where FileManager.default.fileExists(atPath: path.path) {
+            try FileManager.default.removeItem(at: path)
+        }
     }
 }

@@ -54,6 +54,8 @@ struct CirclePeopleReader: Sendable {
         let people = try await read(bindings.people)
         let relations = try await read(bindings.relations)
         let locations = try await read(bindings.locations)
-        return try bindings.graph(people: people, relations: relations, locations: locations, selfID: selfID)
+        var photos: Data?
+        if let table = bindings.photos { photos = try await read(table) }
+        return try bindings.graph(people: people, relations: relations, locations: locations, photos: photos, selfID: selfID)
     }
 }

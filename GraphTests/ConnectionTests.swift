@@ -129,3 +129,24 @@ private actor PausedSession: CircleHTTPClient {
     #expect(model.graph == nil)
     #expect(model.approvalURL == nil)
 }
+
+@Test @MainActor func photoProfileWithFileGrantEnrollsAndStoresItsPrefixes() async throws {
+    let base = CirclePeopleBindings(
+        people: .init(table:"contacts", fields:["id":"id","name":"label","circles":"groups","deleted":"deleted_at"]),
+        relations: .init(table:"links", fields:["id":"id","person":"subject","related":"object","kind":"kind","deleted":"deleted_at"]),
+        locations: .init(table:"bases", fields:["id":"id","person":"person","city":"city","country":"country","start":"start","end":"end","deleted":"deleted_at"]))
+    let bindings = CirclePeopleBindings(people: base.people, relations: base.relations, locations: base.locations,
+        photos: .init(table: "pictures", fields: ["id":"id","person":"person","platform":"source","key":"object_key","sha256":"digest",
+                                                  "fetched":"fetched_at","updated":"updated_at","deleted":"deleted_at"],
+                      files: ["pictures/people/"]))
+    let candidate = CircleDeviceCandidate(token: "fixture-candidate")
+    let fixture = ConnectionFixture(fingerprint: candidate.fingerprint, bindings: bindings)
+    let store = MemoryCredentialStore()
+    let model = CircleConnectionModel(store: store, candidate: { candidate }, client: { _,_ in fixture })
+    await model.connect(endpoint: "https://example.invalid")
+    #expect(model.failure == nil)
+    #expect(store.value?.profile.scopes.contains("files:read:pictures/people/") == true)
+    #expect(store.value?.bindings.photos?.files == ["pictures/people/"])
+    #expect(model.graph?.byID["p1"]?.photoChoices.isEmpty == true)
+    #expect(await fixture.requestedPaths.filter { $0 == "/v1/rows/pull" }.count == 4)
+}

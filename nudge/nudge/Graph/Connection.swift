@@ -134,7 +134,7 @@ struct StoredCircleConnection: Codable, Sendable {
         let canonical = try policy.canonicalConfig(JSONSerialization.data(withJSONObject: rawConfig))
         guard let config = try JSONSerialization.jsonObject(with: canonical) as? [String: Any],
               config["namespace"] as? String == "circle.reader", let fields = config["bindings"] as? [String: Any],
-              Set(fields.keys) == ["people", "relations", "locations"] else { throw CircleConnectionError.invalidConfiguration }
+              Set(fields.keys).subtracting(["photos"]) == ["people", "relations", "locations"] else { throw CircleConnectionError.invalidConfiguration }
         let bindings = try JSONDecoder().decode(CirclePeopleBindings.self, from: JSONSerialization.data(withJSONObject: fields))
         try bindings.validate()
         let profile = CircleReaderProfile(id: "circle-reader", scopes: bindings.scopes)

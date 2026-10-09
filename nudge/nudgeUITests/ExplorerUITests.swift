@@ -211,6 +211,27 @@ final class ExplorerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["group-city:unknown"].exists)
     }
 
+    @MainActor
+    func testMapGroupsByCircleAndOpensPersonFacts() {
+        let app = testApp()
+        app.launchArguments = ["--preview-graph", "--reduce-motion"]
+        app.launch()
+        #if os(macOS)
+        let mapTab = app.radioButtons["Map"]
+        #else
+        let mapTab = app.tabBars.buttons["Map"]
+        #endif
+        XCTAssertTrue(mapTab.waitForExistence(timeout: 10))
+        mapTab.clickOrTap()
+        XCTAssertTrue(app.staticTexts["Met where"].waitForExistence(timeout: 5))
+        app.buttons["map-circle-Circle 1"].clickOrTap()
+        XCTAssertTrue(app.staticTexts["People in Circle 1"].waitForExistence(timeout: 5))
+        app.buttons["map-person-person-01"].clickOrTap()
+        XCTAssertTrue(app.staticTexts["Hometown is not shared with Circle."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Preview has no photos."].exists || app.staticTexts["No profile photo recorded"].exists)
+        app.buttons["Done"].clickOrTap()
+        XCTAssertTrue(app.staticTexts["People in Circle 1"].waitForExistence(timeout: 5))
+    }
 }
 
 private extension XCUIElement {
