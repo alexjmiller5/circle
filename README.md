@@ -41,9 +41,9 @@ which defaults to `~/Library/Developer/Xcode/DerivedData/Circle`.
 `--reset-explorer-preferences` resets only preview display preferences.
 `--reduce-motion` disables preview animation for deterministic interaction tests.
 
-The development bundle ID is `com.example.circle`. These commands build local
-development artifacts; there is no release, signing enrollment or deployment
-workflow. XCUITest may request the Mac user's approval to enable UI Automation.
+Debug builds use the development bundle ID `com.example.circle`; Release
+builds use `com.alexmiller.circle`. These commands build local development
+artifacts. XCUITest may request the Mac user's approval to enable UI Automation.
 Secure enrollment needs a correctly signed build and the device's unlocked
 Keychain. Replacement devices enroll independently; credentials are never
 exported or recovered from another app. No iCloud sync is bundled.
@@ -62,6 +62,26 @@ identity before signing the app. Remove UI-test exceptions from the normal app.
 Verify the signature, certificate/profile match and exact entitlements before
 launching it. This local check does not notarize, release or deploy the app.
 Never replace native Keychain storage with a plaintext credential file.
+
+## iPhone install
+
+The iPhone build is an Ad Hoc IPA signed on GitHub Actions for the devices
+registered in the Apple Developer account; nothing is published.
+
+```sh
+umask 077
+age-keygen -o <private-identity>            # per dispatch, kept locally
+age-keygen -y <private-identity>            # public recipient
+gh workflow run build-ios.yml -f artifact_recipient=<public-recipient>
+gh run watch <run-id> --exit-status
+gh run download <run-id> --dir <private-dir>
+age --decrypt -i <private-identity> -o <private-dir>/Circle.ipa <private-dir>/<artifact>/App.ipa.age
+OTA_TTL=3600 just ota <private-dir>/Circle.ipa
+```
+
+`just ota` prints an install page on this Mac's tailnet name. Open it in Safari
+on the iPhone with Tailscale connected and tap Install. The CI service account
+and its GitHub secret come from `op-project-bootstrap .env.tpl --repo <owner>/circle`.
 
 ## Connect People
 

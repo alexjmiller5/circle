@@ -41,12 +41,15 @@ sections. Current presence is not implemented. Never imply preview data is live.
 
 `project.yml` is the source of truth. XcodeGen produces the ignored
 `Circle.xcodeproj`. Requires Xcode and XcodeGen on macOS. No external Swift
-packages. Deployment targets: iOS 17 and macOS 14. Development bundle ID:
-`com.example.circle`; signing and distribution are separate work.
+packages. Deployment targets: iOS 17 and macOS 14. Debug bundle ID
+`com.example.circle` (local builds and UI tests, so they never share the signed
+app's container or Keychain); Release bundle ID `com.alexmiller.circle`, the
+shipped identity, never renamed.
 
 - `just gen`: regenerate the Xcode project.
 - `just check`: locally signed native build; no installation or deployment.
-- `just test`: pure Swift graph/state tests and Python call-reader tests.
+- `just test`: pure Swift graph/state tests, Python call-reader tests and the
+  signing helper/workflow regressions.
 - `just test-ui`: XCUITest flows on `CIRCLE_DESTINATION` (default macOS).
   `ReachOutSmokeUITests` is an opt-in iOS simulator smoke
   (`TEST_RUNNER_CIRCLE_SMOKE=1`, after `xcrun simctl privacy <udid> grant
@@ -57,6 +60,8 @@ packages. Deployment targets: iOS 17 and macOS 14. Development bundle ID:
 - `just run --preview-graph`: launch synthetic Mac preview.
 - `just run`: launch unconnected Mac app.
 - `just calls --help`: existing call-history CLI.
+- `just ota <ipa>`: serve a verified Ad Hoc IPA as a tailnet install page
+  (blocks for `OTA_TTL` seconds, default 900).
 
 Secure Mac enrollment needs a matching Developer ID identity and Mac profile,
 embedded at `Contents/embedded.provisionprofile`, authorizing the app's private
@@ -67,6 +72,24 @@ and use a disposable signing keychain. No plaintext credential fallback.
 Set `CIRCLE_DESTINATION` to an explicit available iOS Simulator destination
 for build/UI tests. `CIRCLE_DERIVED_DATA` overrides the cache location; keep it
 outside cloud-synced folders. UI automation permissions are native user state.
+
+## iPhone Ad Hoc (CI)
+
+`.github/workflows/build-ios.yml` is manual dispatch only, from the ios-app
+template. It reads `OP_SERVICE_ACCOUNT_TOKEN` (the `circle-ci` service account:
+read on the Circle vault and the approved shared Apple Signing vault). The
+`.env.tpl` and workflow `op://` refs are the bootstrap manifests. Signing uses
+the shared Apple Distribution certificate and Wildcard Ad Hoc Profile: the iOS
+app claims only its application identifier, team and default Keychain group. A
+capability a wildcard profile cannot carry (App Groups, push, iCloud) needs an
+app-specific profile first. The device is `Circle ENV/IOS_DEVICE_ID`, checked
+against the source and exported profiles.
+
+Each dispatch takes a per-dispatch public age recipient and uploads only the
+encrypted `App.ipa.age` (one-day retention). Download, decrypt and verify it
+locally, keep the IPA out of synced folders, then install through the paired Mac
+or `just ota <ipa>`. `scripts/sign-ios.py` and its tests are the template's;
+keep them in sync with it. Never print signing values or device identifiers.
 
 ## Source map
 
