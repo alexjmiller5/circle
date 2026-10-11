@@ -133,6 +133,11 @@ struct CircleMapPin: Identifiable, Equatable, Sendable {
 }
 
 enum CirclePeopleMap {
+    /// Display name for a photo platform id; brands keep their own capitalization.
+    static func platformName(_ value: String) -> String {
+        ["linkedin": "LinkedIn", "whatsapp": "WhatsApp"][value] ?? value.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
     /// One pin per person at their single current base. Bases are city-level, so people sharing
     /// one are spread on a small deterministic spiral to stay tappable.
     static func pins(graph: SocialGraph, coordinates: [String: CircleCoordinate], circle: String?) -> [CircleMapPin] {

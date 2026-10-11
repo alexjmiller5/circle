@@ -278,7 +278,7 @@ struct PersonMapSheet: View {
         #endif
     }
 
-    private func platformName(_ value: String) -> String { value.replacingOccurrences(of: "_", with: " ").capitalized }
+    private func platformName(_ value: String) -> String { CirclePeopleMap.platformName(value) }
 
     private func period(_ residence: GraphResidence) -> String {
         switch (residence.start, residence.end) {

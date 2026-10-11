@@ -132,7 +132,7 @@ requires exactly the grants `CirclePeopleBindings.scopes` derives: projected
 columns for people, relations, locations and the optional photos binding, the
 optional history bindings (`summaries` and `imports` together, `contacts` for
 address-book links), plus one `files:read:<prefix>` per photo binding `files`
-prefix (live: 56 columns and `photos/people/`, 57 grants). History reads are
+prefix (live: 56 columns, `photos/people/` and `photos/records/`, 58 grants). History reads are
 the full summary table, imports by equality on source (newest live run per
 source decides its coverage) and links by equality on the address-book
 platform; tombstones are dropped. A failed history read keeps the last

@@ -23,6 +23,13 @@ private let fixturePhotos = Data(#"""
  {"id":"f4","person":"p1","source":"platform_c","object_key":"pictures/people/c/gone.jpg","digest":"dd","fetched_at":"2026-09-01T00:00:00.000Z","updated_at":"2026-09-01T00:00:00.000Z","deleted_at":"2026-09-02T00:00:00.000Z"}]
 """#.utf8)
 
+@Test func platformNamesKeepBrandCapitalization() {
+    #expect(CirclePeopleMap.platformName("linkedin") == "LinkedIn")
+    #expect(CirclePeopleMap.platformName("whatsapp") == "WhatsApp")
+    #expect(CirclePeopleMap.platformName("instagram") == "Instagram")
+    #expect(CirclePeopleMap.platformName("platform_a") == "Platform A")
+}
+
 @Test func photoBindingAddsExactColumnAndFileGrants() throws {
     try photoBindings.validate()
     #expect(photoBindings.scopes.count == 25)
