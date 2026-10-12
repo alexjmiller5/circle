@@ -84,7 +84,7 @@ private let fixturePhotos = Data(#"""
     #expect(pins.map(\.id) == ["p1"])
 }
 
-@Test func pinsFilterByCircleAndSpreadSharedBasesDeterministically() {
+@Test func pinsFilterByCircleAtTheirCityCoordinate() {
     let place = CirclePlace(city: "City 1", country: "Country 1")
     let people = (1...4).map { GraphPerson(id: "p\($0)", name: "Person \($0)", circles: $0 % 2 == 0 ? ["Place 1"] : ["Era 1"],
                                            baseCity: "City 1", baseCountry: "Country 1") }
@@ -92,12 +92,40 @@ private let fixturePhotos = Data(#"""
     let center = CircleCoordinate(latitude: 40, longitude: -70)
     let all = CirclePeopleMap.pins(graph: graph, coordinates: [place.key: center], circle: nil)
     #expect(all.count == 4)
-    #expect(Set(all.map { "\($0.coordinate.latitude),\($0.coordinate.longitude)" }).count == 4)
-    #expect(all.allSatisfy { abs($0.coordinate.latitude - 40) < 0.05 && abs($0.coordinate.longitude + 70) < 0.05 })
+    #expect(all.allSatisfy { $0.coordinate == center })
     #expect(all == CirclePeopleMap.pins(graph: graph, coordinates: [place.key: center], circle: nil))
     #expect(CirclePeopleMap.pins(graph: graph, coordinates: [place.key: center], circle: "Place 1").map(\.id) == ["p2", "p4"])
     #expect(CirclePeopleMap.circles(graph: graph).map(\.name) == ["Era 1", "Place 1"])
     // Same-named cities in different countries are different places.
     #expect(CirclePlace(city: "City 1", country: "Country 2").key != place.key)
     #expect(CirclePlace(city: " city 1 ", country: "COUNTRY 1").key == place.key)
+}
+
+/// Clusters replace zooming: one pin per city, and nearby cities share a pin while they would overlap.
+@Test func clustersGroupACityAndMergeNearbyCitiesOnlyWhileTheyOverlap() {
+    let near = CirclePlace(city: "City 1", country: "Country 1"), close = CirclePlace(city: "City 2", country: "Country 1")
+    let far = CirclePlace(city: "City 3", country: "Country 1")
+    let coordinates = [near.key: CircleCoordinate(latitude: 40, longitude: -70),
+                       close.key: CircleCoordinate(latitude: 40.1, longitude: -70.1),
+                       far.key: CircleCoordinate(latitude: 48, longitude: -70)]
+    let people = (1...6).map { i in
+        let place = i <= 3 ? near : i <= 5 ? close : far
+        return GraphPerson(id: "p\(i)", name: "Person \(i)", baseCity: place.city, baseCountry: place.country)
+    }
+    let pins = CirclePeopleMap.pins(graph: SocialGraph(people: people, relations: [], selfID: nil), coordinates: coordinates, circle: nil)
+
+    let unmerged = CirclePeopleMap.clusters(pins, coordinates: coordinates, degreesPerPoint: nil)
+    #expect(unmerged.map { $0.pins.map(\.id) } == [["p1", "p2", "p3"], ["p4", "p5"], ["p6"]])
+    #expect(unmerged[0].coordinate == coordinates[near.key])
+
+    // Zoomed out (0.01 degrees per point): City 2 is ~16 points from City 1 and joins the larger city.
+    let zoomedOut = CirclePeopleMap.clusters(pins, coordinates: coordinates, degreesPerPoint: 0.01)
+    #expect(zoomedOut.map { $0.pins.map(\.id) } == [["p1", "p2", "p3", "p4", "p5"], ["p6"]])
+    #expect(zoomedOut[0].id == near.key)
+    // Same longitude, 8 degrees of latitude apart: hundreds of points on a Mercator map, never merged.
+    #expect(zoomedOut.count == 2)
+
+    // Zoomed in, each city is its own pin again.
+    #expect(CirclePeopleMap.clusters(pins, coordinates: coordinates, degreesPerPoint: 0.0005).count == 3)
+    #expect(CirclePeopleMap.clusters(pins, coordinates: coordinates, degreesPerPoint: 0.01) == zoomedOut)
 }

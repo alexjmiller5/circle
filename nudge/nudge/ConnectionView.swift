@@ -17,27 +17,24 @@ struct ConnectedCircleView: View {
     @State private var identityError: String?
     @State private var tab = "explorer"
     @State private var reachOut: ReachOutModel?
+    /// One photo loader and thumbnail cache per connection, kept across refreshes.
+    @State private var avatars: CircleAvatars?
 
     var body: some View {
         VStack(spacing: 0) {
             if let graph = model.graph, let connection = model.connection {
-                HStack {
-                    if let refreshed = model.refreshedAt {
-                        Text("Updated \(refreshed, format: .dateTime.month().day().hour().minute())")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Connection") { showConnection.toggle() }
-                    Button("Refresh") { Task { await model.refresh() } }.disabled(model.busy)
-                }.padding(12)
-                if model.failure != nil || model.cacheMessage != nil || model.graph?.selfID == nil || showConnection { connectionPanel }
-                if let reachOut, reachOut.profile == connection.preferenceKey {
+                if model.failure != nil || model.cacheMessage != nil || model.graph?.selfID == nil { connectionPanel }
+                if let reachOut, reachOut.profile == connection.preferenceKey, let avatars {
                     CircleTabs(explorer: ExplorerView(graph: graph, profile: connection.preferenceKey),
-                               map: PeopleMapView(graph: graph, locator: Self.locator(connection), photos: Self.photos(connection), isPreview: false),
+                               map: PeopleMapView(graph: graph, locator: Self.locator(connection), photos: avatars.loader, isPreview: false),
                                reachOut: ReachOutTab(graph: graph),
                                tab: $tab)
                         .id("\(model.refreshedAt?.timeIntervalSince1970 ?? 0):\(graph.selfID ?? "")")
                         .environment(reachOut)
+                        .environment(avatars)
+                        .environment(\.circleApp, CircleAppActions(updated: model.refreshedAt, busy: model.busy,
+                                                                    refresh: { Task { await model.refresh() } },
+                                                                    showConnection: { showConnection = true }))
                         .modifier(ReachOutReminderScheduling(model: reachOut, people: graph.people))
                 } else {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -54,9 +51,20 @@ struct ConnectedCircleView: View {
                 }
             }
         }
+        .sheet(isPresented: $showConnection) {
+            NavigationStack {
+                ScrollView { connectionPanel }
+                    .navigationTitle("Connection")
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showConnection = false } } }
+            }
+            #if os(macOS)
+            .frame(minWidth: 440, minHeight: 360)
+            #endif
+        }
         .task { await model.restore() }
         .task(id: model.connection?.preferenceKey) {
             reachOut = model.connection.map { ReachOutModel(profile: $0.preferenceKey, history: model.history) }
+            avatars = model.connection.map { CircleAvatars(loader: Self.photos($0)) }
             reachOut?.historyFailure = model.historyFailure
         }
         .onChange(of: model.history) { _, value in reachOut?.history = value }

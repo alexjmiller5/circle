@@ -1,8 +1,12 @@
 # Circle
 
-Native SwiftUI iOS and macOS relationship explorer. The explorer supports
-Constellation, Pathways and Orbits with search, focus history, group selection,
-base/current city distinctions, pan, zoom, node dragging and saved display
+Native SwiftUI iOS and macOS relationship explorer. The explorer is a
+full-screen graph (Constellation, Pathways, Orbits) with profile photos on
+nodes, a floating search/focus bar, details beside it when wide (760 pt+) or in
+a half-height sheet otherwise, and one bottom-right menu per tab (layout,
+grouping and display options, then Refresh and Connection). It supports focus
+history, group selection, base/current city distinctions, finger-tracking pan
+with momentum, zoom, pointer-only node dragging (macOS) and saved display
 preferences. Circle-local tracking and per-person reach-out settings persist
 by profile. Normal launch offers native read-only People enrollment; `--preview-graph`
 explicitly opens synthetic data, including synthetic contact history.
@@ -27,12 +31,18 @@ names the person and its due or snooze moment, and a ledger keeps a delivered
 reminder from repeating.
 City-only visit logic requires two fresh checks at least five minutes apart
 for arrival and departure, and emits once per confirmed visit. It persists
-per person/profile; unknown or paused readings never prove departure. Source
-freshness has no default until collector cadence is measured. This logic is
-not connected to a live feed or notification delivery.
+per person/profile; unknown or paused readings never prove departure.
+`NearbyAlerts.swift` parses one `findmy_ax` collector record, matches it
+city-only (same city or this device's district, region/country agreeing when
+both show one; no metro or distance inference) and defaults to the measured
+freshness (not paused, displayed age <= 600 s, check <= 900 s old). This logic
+is not connected to a live feed, this device's location or notification
+delivery.
 The Map tab pins each person with exactly one current base (city-level,
-geocoded on device), filters by circle, lists circles as met-where groups and
-opens a person sheet: circles, base history, hometown (Unknown: no granted
+geocoded on device) with their photo; one pin per city, merged with nearby
+cities while they would overlap on screen (Mercator distance at the settled
+camera), and a multi-person pin opens a photo chooser. It filters by circle,
+lists circles as met-where groups and opens a person sheet: circles, base history, hometown (Unknown: no granted
 column carries it), presence (Unknown until the collector feed is connected)
 and the newest photo per platform, followed by the person's reach-out
 sections. Current presence is not implemented. Never imply preview data is live.
@@ -50,7 +60,9 @@ shipped identity, never renamed.
 - `just check`: locally signed native build; no installation or deployment.
 - `just test`: pure Swift graph/state tests, Python call-reader tests and the
   signing helper/workflow regressions.
-- `just test-ui`: XCUITest flows on `CIRCLE_DESTINATION` (default macOS).
+- `just test-ui`: XCUITest flows on `CIRCLE_DESTINATION` (default macOS; the
+  mini's locked console cannot enable macOS UI automation, so run the iOS
+  simulator there).
   `ReachOutSmokeUITests` is an opt-in iOS simulator smoke
   (`TEST_RUNNER_CIRCLE_SMOKE=1`, after `xcrun simctl privacy <udid> grant
   contacts` for `com.example.circle` and its `.uitests.xctrunner`): it creates
@@ -97,12 +109,16 @@ keep them in sync with it. Never print signing values or device identifiers.
   secure Keychain storage and private cache. `CommunicationHistory.swift`:
   summary/import/address-book-link reader; `ReachOut.swift`: assessment,
   groups and reasons; `ReachOutReminders.swift`: reminder plan, quiet hours and
-  ledger reconciliation; `ContactLinks.swift`: Contacts matching and URLs. `PeopleMap.swift`: map pins, geocode
-  cache, photo choice and the content-addressed photo cache.
+  ledger reconciliation; `ContactLinks.swift`: Contacts matching and URLs. `PeopleMap.swift`: map pins and
+  clusters, geocode cache, photo choice, thumbnails and the content-addressed photo
+  cache. `NearbyAlerts.swift`: collector records, city-only area rule, freshness
+  and alert text over `NearbyVisits.swift`.
 - `nudge/nudge/`: native views and explicit synthetic development fixture.
   `ReachOutModel.swift` (per-profile settings, notification scheduling and the
   Snooze action), `ReachOutView.swift`, `ContactActions.swift` (Contacts
-  access and URL opening).
+  access and URL opening), `CircleChrome.swift` (shared avatar thumbnails and
+  the bottom-right menu). `PreviewGraph.swift` serves generated portraits to
+  the explicit preview only.
 - `GraphTests/`: Swift Testing, including large graphs and invalid preferences.
 - `nudge/nudgeUITests/`: real native interactions through XCTest.
 - `scripts/call_log.py`, `tests/`: read-only call reader, scoped event identity,
@@ -112,7 +128,11 @@ keep them in sync with it. Never print signing values or device identifiers.
 
 Keep canonical identity and recorded direction. Shared circles never imply
 friendship. Base city is not current presence. Unknown is explicit. Views
-cache layout positions; no all-pairs force layout per animation frame.
+cache layout positions; no all-pairs force layout per animation frame. The
+constellation shelf-packs each group as a disk sized by its own members. A
+gesture offsets or scales the already rendered graph layer (twice the
+viewport) and commits to the camera in steps; graph nodes are tap gestures,
+not Buttons, so a swipe never selects.
 Circles are met-where labels and are never plotted as residence; they carry
 no place flag, so the map does not geocode circle names. Hometown stays
 Unknown unless a granted column carries it. There is no preferred-photo flag:

@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import ImageIO
 #if canImport(CoreLocation)
 import CoreLocation
 #endif
@@ -132,28 +133,51 @@ struct CircleMapPin: Identifiable, Equatable, Sendable {
     let coordinate: CircleCoordinate
 }
 
+struct CircleMapCluster: Identifiable, Equatable, Sendable {
+    let id: String
+    let coordinate: CircleCoordinate
+    var pins: [CircleMapPin]
+}
+
 enum CirclePeopleMap {
     /// Display name for a photo platform id; brands keep their own capitalization.
     static func platformName(_ value: String) -> String {
         ["linkedin": "LinkedIn", "whatsapp": "WhatsApp"][value] ?? value.replacingOccurrences(of: "_", with: " ").capitalized
     }
 
-    /// One pin per person at their single current base. Bases are city-level, so people sharing
-    /// one are spread on a small deterministic spiral to stay tappable.
+    /// One pin per person at their single current base, at the city's coordinate.
     static func pins(graph: SocialGraph, coordinates: [String: CircleCoordinate], circle: String?) -> [CircleMapPin] {
-        var byPlace: [String: [GraphPerson]] = [:]
-        for person in graph.people where circle.map(person.circles.contains) ?? true {
-            if let place = person.basePlace, coordinates[place.key] != nil { byPlace[place.key, default: []].append(person) }
-        }
-        return byPlace.flatMap { key, people in
-            let center = coordinates[key]!, scale = max(cos(center.latitude * .pi / 180), 0.1)
-            return people.sorted { $0.id < $1.id }.enumerated().map { index, person in
-                let radius = people.count == 1 ? 0 : 0.004 * (Double(index) + 0.5).squareRoot()
-                let angle = Double(index) * 2.399963
-                return CircleMapPin(id: person.id, name: person.name, place: person.basePlace!, coordinate: CircleCoordinate(
-                    latitude: center.latitude + radius * cos(angle), longitude: center.longitude + radius * sin(angle) / scale))
-            }
+        graph.people.compactMap { person in
+            guard circle.map(person.circles.contains) ?? true, let place = person.basePlace,
+                  let coordinate = coordinates[place.key] else { return nil }
+            return CircleMapPin(id: person.id, name: person.name, place: place, coordinate: coordinate)
         }.sorted { $0.id < $1.id }
+    }
+
+    /// One cluster per city; a city joins a larger one while their pins would overlap on screen.
+    /// `degreesPerPoint` is the visible longitude span per screen point (nil: never merge cities).
+    static func clusters(_ pins: [CircleMapPin], coordinates: [String: CircleCoordinate], degreesPerPoint: Double?,
+                         minimumPoints: Double = 56) -> [CircleMapCluster] {
+        // Mercator keeps longitude and this latitude measure on the same screen scale.
+        func mercator(_ latitude: Double) -> Double {
+            log(tan(.pi / 4 + min(max(latitude, -85), 85) * .pi / 360)) * 180 / .pi
+        }
+        let places = Dictionary(grouping: pins, by: \.place.key).sorted {
+            $0.value.count != $1.value.count ? $0.value.count > $1.value.count : $0.key < $1.key
+        }
+        var clusters: [CircleMapCluster] = []
+        for (key, members) in places {
+            let center = coordinates[key] ?? members[0].coordinate
+            if let degreesPerPoint, let index = clusters.firstIndex(where: {
+                hypot($0.coordinate.longitude - center.longitude, mercator($0.coordinate.latitude) - mercator(center.latitude))
+                    / degreesPerPoint < minimumPoints
+            }) {
+                clusters[index].pins += members
+            } else {
+                clusters.append(CircleMapCluster(id: key, coordinate: center, pins: members))
+            }
+        }
+        return clusters
     }
 
     /// Circles with member counts, largest first. A place-named circle means met there, never lives there.
@@ -204,6 +228,15 @@ struct CirclePhotoLoader: Sendable {
     static func readable(_ key: String, prefixes: [String]) -> Bool {
         key.count <= 1024 && prefixes.contains { key.hasPrefix($0) }
             && key.range(of: "^[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*$", options: .regularExpression) != nil
+    }
+
+    /// Decodes at most `maxPixels` on the long side, so hundreds of on-screen avatars stay small in memory.
+    static func thumbnail(_ data: Data, maxPixels: Int) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels, kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary)
     }
 
     static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }

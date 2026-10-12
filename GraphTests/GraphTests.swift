@@ -101,6 +101,36 @@ private func fixture() -> SocialGraph {
     #expect(Date().timeIntervalSince(start) < 2)
 }
 
+/// Real circles are skewed: one huge circle and hundreds of tiny ones. Sizing every
+/// cell by the largest circle made the world ~40,000 pt wide and slow to cross.
+@Test func constellationPacksSkewedCirclesCompactlyWithoutOverlap() {
+    let sizes = [429, 245, 170, 137, 94, 93, 87, 81] + Array(repeating: 2, count: 250)
+    var people: [GraphPerson] = []
+    for (group, size) in sizes.enumerated() {
+        for slot in 0..<size { people.append(GraphPerson(id: "g\(group)-\(slot)", name: "P", circles: ["Circle \(group)"])) }
+    }
+    // Overlapping membership: everyone in the second circle also belongs to the first.
+    people = people.map { var p = $0; if p.circles == ["Circle 1"] { p.circles.append("Circle 0") }; return p }
+    let graph = SocialGraph(people: people, relations: [], selfID: nil)
+    let points = GraphPositions.make(graph: graph, state: ExplorerState(selfID: nil))
+    #expect(points.count == people.count)
+    let xs = points.values.map(\.x), ys = points.values.map(\.y)
+    #expect(xs.max()! - xs.min()! < 9_000)
+    #expect(ys.max()! - ys.min()! < 9_000)
+    // No two people closer than a tap target, checked through a coarse grid.
+    var cells: [Int: [GraphPoint]] = [:]
+    func key(_ x: Int, _ y: Int) -> Int { x &* 73_856_093 ^ y &* 19_349_663 }
+    var closest = Double.infinity
+    for point in points.values {
+        let cx = Int((point.x / 60).rounded(.down)), cy = Int((point.y / 60).rounded(.down))
+        for dx in -1...1 { for dy in -1...1 {
+            for other in cells[key(cx + dx, cy + dy)] ?? [] { closest = min(closest, hypot(other.x - point.x, other.y - point.y)) }
+        } }
+        cells[key(cx, cy), default: []].append(point)
+    }
+    #expect(closest >= 44)
+}
+
 @Test func disconnectedComponentsWithMatchingNamesHaveSeparateIdentities() {
     let graph = SocialGraph(people: [GraphPerson(id: "a", name: "Same"), GraphPerson(id: "b", name: "Same")], relations: [], selfID: nil)
     let groups = graph.groups(by: .connections, location: .base)

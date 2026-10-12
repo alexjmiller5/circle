@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import ImageIO
 import Testing
 @testable import CircleGraph
 
@@ -79,4 +80,25 @@ private func digest(_ data: Data) -> String { SHA256.hash(data: data).map { Stri
     #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).count == 3)
     try cache.remove(profile: key)
     #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+}
+
+private func png(width: Int, height: Int) -> Data {
+    let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    context.setFillColor(red: 0.3, green: 0.4, blue: 0.8, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    let data = NSMutableData()
+    let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil)!
+    CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+    CGImageDestinationFinalize(destination)
+    return data as Data
+}
+
+@Test func thumbnailsAreDownsampledAndRejectNonImages() throws {
+    let image = try #require(CirclePhotoLoader.thumbnail(png(width: 800, height: 600), maxPixels: 120))
+    #expect(max(image.width, image.height) == 120)
+    #expect(image.width > image.height)
+    let small = try #require(CirclePhotoLoader.thumbnail(png(width: 40, height: 40), maxPixels: 120))
+    #expect(small.width == 40)
+    #expect(CirclePhotoLoader.thumbnail(Data("not an image".utf8), maxPixels: 120) == nil)
 }

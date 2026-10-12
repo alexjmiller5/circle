@@ -1,7 +1,12 @@
 import XCTest
 
 final class ExplorerUITests: XCTestCase {
-    override func setUpWithError() throws { continueAfterFailure = false }
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        #if os(iOS)
+        XCUIDevice.shared.orientation = .portrait
+        #endif
+    }
 
     @MainActor
     private func testApp() -> XCUIApplication {
@@ -53,12 +58,12 @@ final class ExplorerUITests: XCTestCase {
         let approval = app.links["Approve read-only access"]
         XCTAssertTrue(approval.waitForExistence(timeout: 10))
         print("CIRCLE_APPROVAL_URL=\(approval.value as? String ?? "missing")")
-        XCTAssertTrue(app.buttons["Refresh"].waitForExistence(timeout: 270))
+        XCTAssertTrue(menu(app).waitForExistence(timeout: 270))
         XCTAssertTrue(app.textFields["Find a person"].exists)
         XCTAssertFalse(app.staticTexts["connection-error"].exists)
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.buttons["Refresh"].waitForExistence(timeout: 15))
+        XCTAssertTrue(menu(app).waitForExistence(timeout: 15))
         XCTAssertTrue(app.textFields["Find a person"].exists)
         XCTAssertFalse(app.staticTexts["Synthetic preview"].exists)
     }
@@ -78,12 +83,13 @@ final class ExplorerUITests: XCTestCase {
         XCTAssertFalse(app.keyboards.firstMatch.exists, "Selecting a search result should dismiss the keyboard")
         #endif
         XCTAssertTrue(app.staticTexts["Focus: Person 1"].waitForExistence(timeout: 3))
-        app.buttons["layout-pathways"].clickOrTap()
+        choose("Pathways", in: app)
         XCTAssertTrue(app.staticTexts["Focus: Person 1"].exists)
-        app.buttons["layout-orbits"].clickOrTap()
+        choose("Orbits", in: app)
         XCTAssertTrue(app.staticTexts["Focus: Person 1"].exists)
         app.buttons["Back"].clickOrTap()
         XCTAssertTrue(app.staticTexts["Focus: You"].exists)
+        openDetails(app)
         app.buttons["group-circle:value:Circle 1"].clickOrTap()
         XCTAssertTrue(app.staticTexts["Focus: Circle 1"].exists)
         app.buttons["Back to me"].clickOrTap()
@@ -102,6 +108,7 @@ final class ExplorerUITests: XCTestCase {
         search.clickOrTap()
         search.typeText("Person 1")
         app.buttons["search-person-01"].clickOrTap()
+        openDetails(app)
         let track = app.buttons["tracking-person-01"]
         XCTAssertTrue(track.waitForExistence(timeout: 5))
         track.clickOrTap()
@@ -112,6 +119,7 @@ final class ExplorerUITests: XCTestCase {
         let tracked = app.buttons["tracked-person-01"]
         XCTAssertTrue(tracked.waitForExistence(timeout: 5))
         tracked.clickOrTap()
+        openDetails(app)
         XCTAssertEqual(app.buttons["tracking-person-01"].value as? String, "Tracked")
         app.buttons["tracking-person-01"].clickOrTap()
         XCTAssertFalse(app.buttons["tracked-person-01"].exists)
@@ -130,12 +138,15 @@ final class ExplorerUITests: XCTestCase {
 
     @MainActor
     private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
-        for _ in 0..<10 where !(element.exists && element.isHittable) {
-            #if os(macOS)
-            app.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200)
-            #else
-            app.swipeUp()
-            #endif
+        // Lists load rows lazily, so a row above the viewport does not exist yet: search both ways.
+        for down in [true, false] {
+            for _ in 0..<10 where !(element.exists && element.isHittable) {
+                #if os(macOS)
+                app.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: down ? -200 : 200)
+                #else
+                if down { app.swipeUp() } else { app.swipeDown() }
+                #endif
+            }
         }
     }
 
@@ -216,7 +227,13 @@ final class ExplorerUITests: XCTestCase {
         let from = node.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
         from.press(forDuration: 0.1, thenDragTo: from.withOffset(CGVector(dx: 55, dy: 0)))
         XCTAssertGreaterThan(node.frame.midX, start.midX + 35)
+        #if os(macOS)
+        // A pointer drag on a person moves only that person.
         XCTAssertEqual(neighbor.frame.midX, otherStart.midX, accuracy: 3)
+        #else
+        // A touch swipe that starts on a person pans the whole graph with the finger.
+        XCTAssertEqual(neighbor.frame.midX - otherStart.midX, node.frame.midX - start.midX, accuracy: 3)
+        #endif
         let moved = node.frame
         let background = node.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).withOffset(CGVector(dx: 0, dy: -145))
         background.press(forDuration: 0.1, thenDragTo: background.withOffset(CGVector(dx: -45, dy: 0)))
@@ -234,22 +251,45 @@ final class ExplorerUITests: XCTestCase {
         #endif
     }
 
+    #if os(iOS)
+    /// A quick flick keeps the graph moving past the finger, so crossing a large graph takes few swipes.
+    @MainActor
+    func testFlickCarriesTheGraphFurtherThanTheFinger() {
+        let app = testApp()
+        app.launchArguments = ["--preview-graph", "--reset-explorer-preferences"]
+        app.launch()
+        let node = app.buttons["person-person-00"]
+        XCTAssertTrue(node.waitForExistence(timeout: 5))
+        let start = node.frame
+        let from = node.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        from.press(forDuration: 0.05, thenDragTo: from.withOffset(CGVector(dx: -80, dy: 0)),
+                   withVelocity: XCUIGestureVelocity(2500), thenHoldForDuration: 0)
+        let moved = expectation(for: NSPredicate { _, _ in node.exists && node.frame.midX < start.midX - 110 || !node.exists },
+                                evaluatedWith: nil)
+        wait(for: [moved], timeout: 3)
+    }
+    #endif
+
     @MainActor
     func testLocationAndPreferencesSurviveRelaunch() {
         let app = testApp()
         app.launchArguments = ["--preview-graph", "--reset-explorer-preferences"]
         app.launch()
-        app.buttons["grouping-city"].clickOrTap()
-        app.buttons["location-current"].clickOrTap()
+        choose("City", in: app)
+        choose("Currently in", in: app)
+        openDetails(app)
         app.buttons["group-city:unknown"].clickOrTap()
         XCTAssertTrue(app.staticTexts["Focus: Unknown"].exists)
-        app.buttons["layout-orbits"].clickOrTap()
+        closeDetails(app)
+        choose("Orbits", in: app)
         app.terminate()
         app.launchArguments = ["--preview-graph"]
         app.launch()
-        XCTAssertEqual(app.buttons["layout-orbits"].value as? String, "Selected")
-        app.buttons["layout-constellation"].clickOrTap()
-        XCTAssertEqual(app.buttons["location-current"].value as? String, "Selected")
+        XCTAssertTrue(menu(app).waitForExistence(timeout: 5))
+        XCTAssertEqual(menu(app).value as? String, "Orbits · grouped by city · currently in")
+        choose("Constellation", in: app)
+        XCTAssertEqual(menu(app).value as? String, "Constellation · grouped by city · currently in")
+        openDetails(app)
         XCTAssertTrue(app.buttons["group-city:unknown"].exists)
     }
 
@@ -269,10 +309,69 @@ final class ExplorerUITests: XCTestCase {
         app.buttons["map-circle-Circle 1"].clickOrTap()
         XCTAssertTrue(app.staticTexts["People in Circle 1"].waitForExistence(timeout: 5))
         app.buttons["map-person-person-01"].clickOrTap()
-        XCTAssertTrue(app.staticTexts["Hometown is not shared with Circle."].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Preview has no photos."].exists || app.staticTexts["No profile photo recorded"].exists)
+        XCTAssertTrue(app.staticTexts["Base history"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.images["Profile photo from Instagram"].waitForExistence(timeout: 5))
         app.buttons["Done"].clickOrTap()
         XCTAssertTrue(app.staticTexts["People in Circle 1"].waitForExistence(timeout: 5))
+    }
+
+    /// Everyone based in one city shares a pin; tapping it lists them with photos to choose from.
+    @MainActor
+    func testMapClusterOpensAChooserWithEveryoneThere() {
+        let app = testApp()
+        app.launchArguments = ["--preview-graph", "--reduce-motion"]
+        app.launch()
+        #if os(macOS)
+        let mapTab = app.radioButtons["Map"]
+        #else
+        let mapTab = app.tabBars.buttons["Map"]
+        #endif
+        XCTAssertTrue(mapTab.waitForExistence(timeout: 10))
+        mapTab.clickOrTap()
+        // Synthetic people live in three public cities; geocoding needs the system service.
+        let cluster = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'cluster-'")).firstMatch
+        XCTAssertTrue(cluster.waitForExistence(timeout: 30))
+        cluster.clickOrTap()
+        let person = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'cluster-person-'")).firstMatch
+        XCTAssertTrue(person.waitForExistence(timeout: 5))
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Map cluster chooser"; shot.lifetime = .keepAlways; add(shot)
+        person.clickOrTap()
+        XCTAssertTrue(app.staticTexts["Base history"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func menu(_ app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: "circle-menu").firstMatch
+    }
+
+    /// Picks one entry from the explorer's bottom-right menu.
+    @MainActor
+    private func choose(_ item: String, in app: XCUIApplication) {
+        let button = menu(app)
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        button.clickOrTap()
+        #if os(macOS)
+        let entry = app.menuItems[item]
+        #else
+        let entry = app.buttons[item]
+        #endif
+        XCTAssertTrue(entry.waitForExistence(timeout: 3))
+        entry.clickOrTap()
+    }
+
+    /// Compact layouts show details in a sheet; wide ones keep them beside the graph.
+    @MainActor
+    private func openDetails(_ app: XCUIApplication) {
+        let card = app.buttons["focus-details"]
+        if card.exists { card.clickOrTap() }
+    }
+
+    @MainActor
+    private func closeDetails(_ app: XCUIApplication) {
+        if !app.buttons["focus-details"].exists { return }
+        let done = app.buttons["Done"]
+        if done.exists { done.clickOrTap() }
     }
 }
 

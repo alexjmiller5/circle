@@ -3,8 +3,11 @@
 A native iOS and macOS app for exploring your people and staying in touch.
 
 The current native explorer has three layouts: **Constellation**, **Pathways**
-and **Orbits**. Search for a person, focus a group, follow recorded introductions,
-return to a previous selection, pan, pinch or use zoom buttons, and drag nodes.
+and **Orbits**, drawn full screen with profile photos on the people. Search for a
+person, focus a group, follow recorded introductions, return to a previous
+selection, swipe to pan (a flick keeps gliding), pinch or use zoom buttons, and
+drag nodes with a pointer on the Mac. The small menu in the bottom-right corner
+holds layout, grouping and display options, plus Refresh and Connection.
 Display preferences persist locally. Reduced Motion is respected. Track people
 locally for the reach-out list, set separate contact and hangout cadences,
 priority, qualifying interactions, reminder preferences and snooze. Unknown
@@ -13,7 +16,9 @@ history stays explicit. Preview preferences are isolated from connected data.
 Normal launch offers a read-only People connection through browser-approved
 Life Data enrollment. A complete refresh replaces the graph; failed refreshes
 preserve its private offline copy. The **Map** tab pins people at their single
-current base, filters by circle and groups circles as where you met. A person
+current base with their photo, groups everyone in one city (and in cities that
+would overlap at the current zoom) under one pin that opens a chooser, filters
+by circle and groups circles as where you met. A person
 sheet shows circles, base history, hometown, presence and the newest profile
 photo per platform, then the person's reach-out history and settings. **Current
 presence and hometown are not connected yet.** The development preview
@@ -120,8 +125,8 @@ or modify the real service.
 ## Map
 
 Bases are city and country text, geocoded on the device one at a time and
-cached privately per connection, so pins are city-level and people sharing a
-base are spread apart to stay tappable. People with no current base, or with
+cached privately per connection, so pins are city-level: everyone sharing a
+base shares a pin, and nearby cities merge while their pins would overlap. People with no current base, or with
 conflicting current bases, stay unpinned and are counted. Circles describe how
 and where you met, so the map never plots them as homes. Presence stays
 Unknown until a source with a freshness policy is connected. Photos load
@@ -165,8 +170,12 @@ least five minutes apart and alerts once per visit. Confirmed departure also
 requires two fresh checks before a later visit can alert. Missing, stale or
 paused readings cannot prove departure. Saved device/profile state prevents a
 restart from repeating an alert. Collection time is not a measured location
-fix. Live source enrollment, measured freshness policy, area matching and
-notification delivery remain unconnected. The prepared stream reader supports
+fix. The alert core reads one collector record, matches it city-only against
+this device's geocoded city (or district) with region and country agreeing when
+both show one, and applies the measured freshness cutoff (not paused, displayed
+age at most 10 minutes, check at most 15 minutes old); the notification shows
+the observed place and says distance unknown. Live source enrollment, this
+device's location and notification delivery remain unconnected. The prepared stream reader supports
 the service's bounded original-body pages with opaque cursor encoding and
 exact read-only enrollment checks. It creates no profile or credential and
 does not treat a whole-stream append as a latest-per-person position.

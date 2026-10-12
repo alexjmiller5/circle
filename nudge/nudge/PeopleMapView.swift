@@ -11,10 +11,15 @@ struct PeopleMapView: View {
     @State private var locating = 0
     @State private var unlocated = 0
     @State private var circle: String?
-    @State private var selected: GraphPerson?
+    @State private var sheet: MapSheet?
     @State private var camera: MapCameraPosition = .automatic
+    /// Longitude degrees per screen point once the camera settles; drives city merging.
+    @State private var degreesPerPoint: Double?
 
     private var pins: [CircleMapPin] { CirclePeopleMap.pins(graph: graph, coordinates: coordinates, circle: circle) }
+    private var clusters: [CircleMapCluster] {
+        CirclePeopleMap.clusters(pins, coordinates: coordinates, degreesPerPoint: degreesPerPoint)
+    }
     private var animation: Animation? {
         reduceMotion || ProcessInfo.processInfo.arguments.contains("--reduce-motion") ? nil : .easeInOut(duration: 0.4)
     }
@@ -35,31 +40,36 @@ struct PeopleMapView: View {
                 }
             }
         }
-        .sheet(item: $selected) { person in PersonMapSheet(person: person, photos: photos, isPreview: isPreview) }
+        .sheet(item: $sheet) { sheet in
+            switch sheet {
+            case .person(let person): PersonMapSheet(person: person, photos: photos, isPreview: isPreview)
+            case .cluster(let cluster): MapClusterSheet(cluster: cluster, graph: graph, photos: photos, isPreview: isPreview)
+            }
+        }
         .task { await locate() }
     }
 
     private var map: some View {
-        Map(position: $camera) {
-            ForEach(pins) { pin in
-                Annotation(pin.name, coordinate: CLLocationCoordinate2D(latitude: pin.coordinate.latitude, longitude: pin.coordinate.longitude)) {
-                    Button { selected = graph.byID[pin.id] } label: {
-                        Text(initials(pin.name)).font(.caption2.weight(.semibold)).foregroundStyle(.white)
-                            .frame(width: 28, height: 28)
-                            .background(GraphTheme.color(for: graph.byID[pin.id]?.circles.first ?? pin.id), in: Circle())
-                            .overlay(Circle().stroke(.white, lineWidth: 2))
-                            .frame(width: 44, height: 44).contentShape(Rectangle())
+        GeometryReader { geometry in
+            Map(position: $camera) {
+                ForEach(clusters) { cluster in
+                    Annotation(cluster.pins[0].place.query,
+                               coordinate: CLLocationCoordinate2D(latitude: cluster.coordinate.latitude, longitude: cluster.coordinate.longitude)) {
+                        ClusterPin(cluster: cluster, graph: graph) {
+                            if cluster.pins.count == 1, let person = graph.byID[cluster.pins[0].id] { sheet = .person(person) }
+                            else { sheet = .cluster(cluster) }
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(pin.name), based in \(pin.place.query)")
-                    .accessibilityIdentifier("pin-\(pin.id)")
+                    .annotationTitles(.hidden)
                 }
-                .annotationTitles(.hidden)
             }
+            .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+            .mapControls { MapCompass(); MapScaleView() }
+            .onMapCameraChange(frequency: .onEnd) { context in
+                degreesPerPoint = context.region.span.longitudeDelta / max(geometry.size.width, 1)
+            }
+            .accessibilityLabel("Map of current bases")
         }
-        .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
-        .mapControls { MapCompass(); MapScaleView() }
-        .accessibilityLabel("Map of current bases")
     }
 
     private var panel: some View {
@@ -82,7 +92,7 @@ struct PeopleMapView: View {
                 if unplaced > 0 { Text("\(unplaced) with a base the map could not place") }
                 Text("\(unknown) with no recorded current base")
                 if conflicting > 0 { Text("\(conflicting) with conflicting current bases, left unpinned") }
-                Text("Pins are city-level and spread apart so each stays tappable. Presence is not shown.")
+                Text("Pins are city-level. People in one city, or in cities that would overlap, share a pin; tap it to choose. Presence is not shown.")
             }.font(.caption).foregroundStyle(.secondary)
             HStack {
                 Text("Circle").foregroundStyle(.secondary)
@@ -98,7 +108,7 @@ struct PeopleMapView: View {
                 Text("People in \(circle)").font(.headline)
                 ForEach(graph.people.filter { $0.circles.contains(circle) }
                     .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }) { person in
-                    row(person.name, detail: person.basePlace?.query ?? "No known base") { selected = person }
+                    row(person.name, detail: person.basePlace?.query ?? "No known base") { sheet = .person(person) }
                         .accessibilityIdentifier("map-person-\(person.id)")
                 }
             } else {
@@ -127,10 +137,6 @@ struct PeopleMapView: View {
                 Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
             }.font(.subheadline).padding(.vertical, 6).contentShape(Rectangle())
         }.buttonStyle(.plain)
-    }
-
-    private func initials(_ name: String) -> String {
-        name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined().uppercased()
     }
 
     /// Frames every visible pin; a lone city still shows its surroundings.
@@ -170,11 +176,116 @@ struct PeopleMapView: View {
     }
 }
 
+enum MapSheet: Identifiable {
+    case person(GraphPerson), cluster(CircleMapCluster)
+    var id: String {
+        switch self {
+        case .person(let person): "person:" + person.id
+        case .cluster(let cluster): "cluster:" + cluster.id
+        }
+    }
+}
+
+/// A city pin: the person's photo, or a short stack of photos with a count.
+private struct ClusterPin: View {
+    let cluster: CircleMapCluster
+    let graph: SocialGraph
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            ZStack(alignment: .topTrailing) {
+                HStack(spacing: -16) {
+                    ForEach(cluster.pins.prefix(3), id: \.id) { pin in
+                        if let person = graph.byID[pin.id] {
+                            CircleAvatar(person: person, size: 34, color: GraphTheme.color(for: person.circles.first ?? person.id))
+                                .background(Circle().fill(.background))
+                                .overlay(Circle().stroke(.white, lineWidth: 2))
+                        }
+                    }
+                }
+                if cluster.pins.count > 1 {
+                    Text("\(cluster.pins.count)").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(GraphTheme.accent, in: Capsule()).overlay(Capsule().stroke(.white, lineWidth: 1.5))
+                        .offset(x: 8, y: -6)
+                }
+            }
+            .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(cluster.pins.count == 1 ? "\(cluster.pins[0].name), based in \(cluster.pins[0].place.query)"
+                                                    : "\(cluster.pins.count) people near \(cluster.pins[0].place.query)")
+        .accessibilityIdentifier(cluster.pins.count == 1 ? "pin-\(cluster.pins[0].id)" : "cluster-\(cluster.id)")
+    }
+}
+
+/// Everyone under one pin, with photos, grouped by city; pick one to see their facts.
+struct MapClusterSheet: View {
+    let cluster: CircleMapCluster
+    let graph: SocialGraph
+    let photos: CirclePhotoLoader?
+    let isPreview: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let places = Dictionary(grouping: cluster.pins, by: \.place.query).sorted {
+            $0.value.count != $1.value.count ? $0.value.count > $1.value.count : $0.key < $1.key
+        }
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(places, id: \.key) { place, pins in
+                        if places.count > 1 { Text("\(place) · \(pins.count)").font(.headline) }
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 12)], spacing: 14) {
+                            ForEach(pins.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }, id: \.id) { pin in
+                                if let person = graph.byID[pin.id] {
+                                    NavigationLink(value: person.id) {
+                                        VStack(spacing: 6) {
+                                            CircleAvatar(person: person, size: 60, color: GraphTheme.color(for: person.circles.first ?? person.id))
+                                            Text(person.name).font(.caption).lineLimit(2).multilineTextAlignment(.center)
+                                        }.frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(.plain).accessibilityIdentifier("cluster-person-\(person.id)")
+                                }
+                            }
+                        }
+                    }
+                }.padding(20)
+            }
+            .navigationTitle(places.count == 1 ? places[0].key : "\(cluster.pins.count) people nearby")
+            .navigationDestination(for: String.self) { id in
+                if let person = graph.byID[id] { PersonMapDetails(person: person, photos: photos, isPreview: isPreview) }
+            }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        #if os(macOS)
+        .frame(minWidth: 440, minHeight: 480)
+        #endif
+    }
+}
+
 struct PersonMapSheet: View {
     let person: GraphPerson
     let photos: CirclePhotoLoader?
     let isPreview: Bool
     @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            PersonMapDetails(person: person, photos: photos, isPreview: isPreview)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        #if os(macOS)
+        .frame(minWidth: 440, minHeight: 560)
+        #endif
+    }
+}
+
+struct PersonMapDetails: View {
+    let person: GraphPerson
+    let photos: CirclePhotoLoader?
+    let isPreview: Bool
     @Environment(ReachOutModel.self) private var reachOut: ReachOutModel?
     @State private var platform: String?
     @State private var result: CirclePhotoResult?
@@ -184,43 +295,37 @@ struct PersonMapSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Photo") { photoSection }
-                Section("Met where") {
-                    Text(person.circles.isEmpty ? "No circles recorded" : person.circles.joined(separator: " · "))
-                    Text("Circles say how and where you met, never where someone lives.").font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Based in") {
-                    if let place = person.basePlace { Text(place.query) }
-                    else if person.baseHistory.contains(where: { $0.end == nil }) { Text("Unknown: conflicting current bases") }
-                    else { Text("Unknown") }
-                }
-                Section("Base history") {
-                    if person.baseHistory.isEmpty { Text("No residence recorded").foregroundStyle(.secondary) }
-                    ForEach(Array(person.baseHistory.enumerated()), id: \.offset) { _, residence in
-                        LabeledContent(CirclePlace(city: residence.city ?? "", country: residence.country).query.nonEmpty ?? "Unknown place",
-                                       value: period(residence))
-                    }
-                }
-                Section("Hometown") {
-                    Text("Unknown")
-                    Text("Hometown is not shared with Circle.").font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Currently in") {
-                    Text(person.presence)
-                    Text(isPreview ? "Synthetic preview presence." : "Presence is not connected. A base is not a current location.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if reachOut != nil { ReachOutSections(person: person) }
+        Form {
+            Section("Photo") { photoSection }
+            Section("Met where") {
+                Text(person.circles.isEmpty ? "No circles recorded" : person.circles.joined(separator: " · "))
+                Text("Circles say how and where you met, never where someone lives.").font(.caption).foregroundStyle(.secondary)
             }
-            .formStyle(.grouped)
-            .navigationTitle(person.name)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            Section("Based in") {
+                if let place = person.basePlace { Text(place.query) }
+                else if person.baseHistory.contains(where: { $0.end == nil }) { Text("Unknown: conflicting current bases") }
+                else { Text("Unknown") }
+            }
+            Section("Base history") {
+                if person.baseHistory.isEmpty { Text("No residence recorded").foregroundStyle(.secondary) }
+                ForEach(Array(person.baseHistory.enumerated()), id: \.offset) { _, residence in
+                    LabeledContent(CirclePlace(city: residence.city ?? "", country: residence.country).query.nonEmpty ?? "Unknown place",
+                                   value: period(residence))
+                }
+            }
+            Section("Hometown") {
+                Text("Unknown")
+                Text("Hometown is not shared with Circle.").font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Currently in") {
+                Text(person.presence)
+                Text(isPreview ? "Synthetic preview presence." : "Presence is not connected. A base is not a current location.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if reachOut != nil { ReachOutSections(person: person) }
         }
-        #if os(macOS)
-        .frame(minWidth: 440, minHeight: 560)
-        #endif
+        .formStyle(.grouped)
+        .navigationTitle(person.name)
         .task(id: photo?.key) {
             result = nil
             guard let photo, let photos else { return }

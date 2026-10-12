@@ -248,19 +248,27 @@ enum GraphPositions {
     }
 
     private static func constellation(graph: SocialGraph, state: ExplorerState) -> [String: GraphPoint] {
-        let groups = graph.groups(by: state.grouping, location: state.location)
-        var points: [String: GraphPoint] = [:]
-        // One position per person, even if several circle regions contain them.
-        // Group-sized cells avoid all-pairs force simulation and overlapping nodes.
-        let maxCount = groups.map { $0.members.count }.max() ?? 1
-        let cell = max(300, sqrt(Double(maxCount)) * 125)
-        let columns = max(1, Int(ceil(sqrt(Double(groups.count)))))
-        for (index, group) in groups.enumerated() {
-            let center = GraphPoint(x: Double(index % columns) * cell, y: Double(index / columns) * cell)
-            for (slot, id) in group.members.enumerated() where points[id] == nil {
-                let radius = sqrt(Double(slot)) * 65, angle = Double(slot) * 2.3999632297
-                points[id] = GraphPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
+        // One position per person, even if several circle regions contain them: largest
+        // groups first, so a person sits in their biggest group.
+        let groups = graph.groups(by: state.grouping, location: state.location).sorted {
+            $0.members.count != $1.members.count ? $0.members.count > $1.members.count : $0.id < $1.id
+        }
+        var placed = Set<String>()
+        let clusters = groups.map { $0.members.filter { placed.insert($0).inserted } }.filter { !$0.isEmpty }
+        // Each cluster is a sunflower disk sized by its own members, shelf-packed in rows.
+        // Sizing by the largest group made the world ~40,000 pt wide; no all-pairs settling.
+        let spacing = 65.0, padding = 50.0
+        let radii = clusters.map { sqrt(Double($0.count - 1)) * spacing + padding }
+        let rowWidth = max(2 * (radii.max() ?? 0), sqrt(radii.reduce(0) { $0 + 4 * $1 * $1 }) * 1.2)
+        var points: [String: GraphPoint] = [:], x = 0.0, y = 0.0, rowHeight = 0.0
+        for (cluster, radius) in zip(clusters, radii) {
+            if x > 0 && x + 2 * radius > rowWidth { x = 0; y += rowHeight; rowHeight = 0 }
+            let center = GraphPoint(x: x + radius, y: y + radius)
+            for (slot, id) in cluster.enumerated() {
+                let r = sqrt(Double(slot)) * spacing, angle = Double(slot) * 2.3999632297
+                points[id] = GraphPoint(x: center.x + cos(angle) * r, y: center.y + sin(angle) * r)
             }
+            x += 2 * radius; rowHeight = max(rowHeight, 2 * radius)
         }
         return points
     }
