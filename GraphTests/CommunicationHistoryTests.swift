@@ -14,6 +14,8 @@ let importTable = CircleProjectionTable(table: "talk_runs", fields: [
     "firstEvent":"first_at", "completed":"done_at", "updated":"updated_at", "deleted":"deleted_at"])
 let contactTable = CircleProjectionTable(table: "handles", fields: [
     "id":"id", "person":"who", "platform":"kind", "source":"native_id", "deleted":"deleted_at"])
+let hangoutTable = CircleProjectionTable(table: "meetups", fields: [
+    "id":"id", "date":"day", "people":"who", "deleted":"deleted_at"])
 
 private func summaryRow(_ person: String, _ channel: String, id: String? = nil, sent: Any = NSNull(), received: Any = NSNull(),
                         answered: Any = NSNull(), deleted: Any = NSNull()) -> [String: Any] {
@@ -33,9 +35,10 @@ actor HistoryFixture: CircleHTTPClient {
     var summaries: [[String: Any]]
     var imports: [[String: Any]]
     var contacts: [[String: Any]]
+    var hangouts: [[String: Any]]
     private(set) var filters: [String: [[String: String]]] = [:]
-    init(summaries: [[String: Any]], imports: [[String: Any]], contacts: [[String: Any]] = []) {
-        self.summaries = summaries; self.imports = imports; self.contacts = contacts
+    init(summaries: [[String: Any]], imports: [[String: Any]], contacts: [[String: Any]] = [], hangouts: [[String: Any]] = []) {
+        self.summaries = summaries; self.imports = imports; self.contacts = contacts; self.hangouts = hangouts
     }
     func request(path: String, method: String, body: Data?, maxBytes: Int) async throws -> CircleHTTPReply {
         #expect(path == "/v1/rows/pull" && method == "POST")
@@ -46,6 +49,7 @@ actor HistoryFixture: CircleHTTPClient {
         case "talk_summary": summaries
         case "talk_runs": imports
         case "handles": contacts
+        case "meetups": hangouts
         default: throw CircleConnectionError.invalidConfiguration
         }
         let rows = all.filter { row in filter.allSatisfy { row[$0.key] as? String == $0.value } }
@@ -162,4 +166,37 @@ private func instant(_ value: String) -> Date { try! Date(value, strategy: .iso8
     #expect(try cache.load(profile: profile)?.history == history)
     try cache.save(graph, refreshedAt: Date(), profile: profile)
     #expect(try cache.load(profile: profile)?.history == nil)
+}
+
+/// Logged hangouts are the in-person source: the newest past day per person resets the clock.
+@Test func loggedHangoutsResetTheClockAndFutureOrDeletedOnesDoNot() async throws {
+    let fixture = HistoryFixture(summaries: [summaryRow("p1", "imessage", sent: "2026-08-01T10:00:00.000Z")], imports: [],
+                                 hangouts: [
+        ["id": "h1", "day": "2026-09-20", "who": "[\"p1\",\"p2\"]", "deleted_at": NSNull()],
+        ["id": "h2", "day": "2026-09-01", "who": "[\"p1\"]", "deleted_at": NSNull()],
+        ["id": "h3", "day": "2026-10-01", "who": "[\"p2\"]", "deleted_at": "2026-10-02T00:00:00.000Z"]])
+    let history = try await CommunicationHistoryReader(client: fixture)
+        .read(summaries: summaryTable, imports: importTable, contacts: nil, hangouts: hangoutTable)
+    var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "America/New_York")!
+    func noon(_ day: Int) -> Date { calendar.date(from: DateComponents(year: 2026, month: 9, day: day, hour: 12))! }
+    #expect(history.hangoutDays(for: "p1", calendar: calendar) == [noon(1), noon(20)])
+    #expect(history.hangoutDays(for: "p2", calendar: calendar) == [noon(20)])
+    #expect(history.hangoutDays(for: "p3", calendar: calendar).isEmpty)
+    let now = instant("2026-10-12T16:00:00.000Z")
+    let assessment = ReachOutAssessment(personID: "p1", history: history, settings: ReachOutPreferences(), now: now, calendar: calendar)
+    #expect(assessment.lastContact?.kind == .hangout)
+    #expect(assessment.reason.contains("logged hangout (In person)"))
+    // A hangout logged for a future day is a plan, not contact.
+    let early = ReachOutAssessment(personID: "p1", history: history, settings: ReachOutPreferences(),
+                                   now: instant("2026-09-10T16:00:00.000Z"), calendar: calendar)
+    #expect(early.lastContact?.moment.date == noon(1))
+    // Hangouts need the contact-history profile beside them.
+    var bindings = CirclePeopleBindings(people: .init(table: "p", fields: ["id":"id", "name":"n", "circles":"c", "deleted":"d"]),
+                                        relations: .init(table: "r", fields: ["id":"id", "person":"a", "related":"b", "kind":"k", "deleted":"d"]),
+                                        locations: .init(table: "l", fields: ["id":"id", "person":"p", "city":"c", "country":"k", "start":"s", "end":"e", "deleted":"d"]),
+                                        hangouts: hangoutTable)
+    #expect(throws: (any Error).self) { try bindings.validate() }
+    bindings.summaries = summaryTable; bindings.imports = importTable
+    try bindings.validate()
+    #expect(bindings.scopes.contains("tables:read:meetups:day"))
 }

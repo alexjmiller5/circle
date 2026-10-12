@@ -56,3 +56,23 @@ private extension CirclePeopleBindings {
     #expect(graph.city(of: graph.byID["p1"]!, mode: .base) == "City 1, Country 1")
     #expect(graph.groups(by: .city, location: .current).count == 1)
 }
+
+@Test func relationsBindingMayCarryTheIntroducer() throws {
+    let base = ["id":"id", "person":"subject", "related":"object", "kind":"kind", "deleted":"deleted_at"]
+    var fields = base; fields["introducer"] = "via"
+    let config = CirclePeopleBindings(
+        people: .init(table: "contacts", fields: ["id":"id", "name":"label", "circles":"groups", "deleted":"deleted_at"]),
+        relations: .init(table: "links", fields: fields),
+        locations: .init(table: "bases", fields: ["id":"id", "person":"person", "city":"city", "country":"country", "start":"start", "end":"end", "deleted":"deleted_at"]))
+    try config.validate()
+    #expect(config.scopes.contains("tables:read:links:via"))
+    let people = Data(#"[{"id":"p1","label":"Person 1","groups":null,"deleted_at":null},{"id":"p2","label":"Person 2","groups":null,"deleted_at":null},{"id":"p3","label":"Person 3","groups":null,"deleted_at":null}]"#.utf8)
+    let relations = Data(#"[{"id":"r1","subject":"p1","object":"p2","kind":"introduced","via":"p3","deleted_at":null},{"id":"r2","subject":"p1","object":"p3","kind":"knows","via":null,"deleted_at":null}]"#.utf8)
+    let graph = try config.graph(people: people, relations: relations, locations: Data("[]".utf8), selfID: nil)
+    #expect(graph.introducer(of: "p1", and: "p2") == "p3")
+    #expect(graph.edges.map(\.kind).sorted { $0.rawValue < $1.rawValue } == [.introduced, .knows])
+    // Unknown relation fields are still refused.
+    var extra = base; extra["note"] = "note"
+    let bad = CirclePeopleBindings(people: config.people, relations: .init(table: "links", fields: extra), locations: config.locations)
+    #expect(throws: (any Error).self) { try bad.validate() }
+}

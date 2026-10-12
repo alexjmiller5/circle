@@ -8,7 +8,7 @@ struct CircleProjectionTable: Codable, Sendable {
     var files: [String]? = nil
     var columns: [String] { Array(Set(fields.values)).sorted() }
 
-    func validate(keys: Set<String>, files expectsFiles: Bool = false) throws {
+    func validate(keys: Set<String>, optional: Set<String> = [], files expectsFiles: Bool = false) throws {
         let valid: (String) -> Bool = { $0.range(of: "^[A-Za-z][A-Za-z0-9_]*$", options: .regularExpression) != nil }
         if expectsFiles {
             guard let files, !files.isEmpty, Set(files).count == files.count,
@@ -16,7 +16,8 @@ struct CircleProjectionTable: Codable, Sendable {
         } else if files != nil { throw CircleConnectionError.invalidConfiguration }
         guard valid(table), !["history", "provenance", "purges"].contains(table.lowercased()),
               !table.lowercased().hasPrefix("catalog_"), !table.lowercased().hasPrefix("sqlite_"),
-              Set(fields.keys) == keys, fields["id"] == "id", fields.values.allSatisfy(valid),
+              Set(fields.keys).isSuperset(of: keys), Set(fields.keys).subtracting(keys).isSubset(of: optional),
+              fields["id"] == "id", fields.values.allSatisfy(valid),
               columns.count == fields.count else { throw CircleConnectionError.invalidConfiguration }
     }
 
@@ -43,22 +44,25 @@ struct CirclePeopleBindings: Codable, Sendable {
     var summaries: CircleProjectionTable? = nil
     var imports: CircleProjectionTable? = nil
     var contacts: CircleProjectionTable? = nil
+    /// Logged hangouts; read beside contact history.
+    var hangouts: CircleProjectionTable? = nil
 
     func validate() throws {
         try people.validate(keys: ["id", "name", "circles", "deleted"])
-        try relations.validate(keys: ["id", "person", "related", "kind", "deleted"])
+        try relations.validate(keys: ["id", "person", "related", "kind", "deleted"], optional: ["introducer"])
         try locations.validate(keys: ["id", "person", "city", "country", "start", "end", "deleted"])
         try photos?.validate(keys: ["id", "person", "platform", "key", "sha256", "fetched", "updated", "deleted"], files: true)
         try summaries?.validate(keys: CommunicationHistoryReader.summaryKeys)
         try imports?.validate(keys: CommunicationHistoryReader.importKeys)
         try contacts?.validate(keys: CommunicationHistoryReader.contactKeys)
-        guard (summaries == nil) == (imports == nil), contacts == nil || summaries != nil else {
+        try hangouts?.validate(keys: CommunicationHistoryReader.hangoutKeys)
+        guard (summaries == nil) == (imports == nil), contacts == nil || summaries != nil, hangouts == nil || summaries != nil else {
             throw CircleConnectionError.invalidConfiguration
         }
     }
 
     var scopes: [String] {
-        Set(([people, relations, locations] + [photos, summaries, imports, contacts].compactMap { $0 }).flatMap { table in
+        Set(([people, relations, locations] + [photos, summaries, imports, contacts, hangouts].compactMap { $0 }).flatMap { table in
             table.columns.map { "tables:read:\(table.table):\($0)" }
         } + (photos?.files ?? []).map { "files:read:" + $0 }).sorted()
     }
@@ -111,7 +115,8 @@ struct CirclePeopleBindings: Codable, Sendable {
         let edges = try active(relations.rows(relationData)).map { row in
             GraphRelation(personID: try string(row, "person", required: true)!,
                           relatedID: try string(row, "related", required: true)!,
-                          kind: try string(row, "kind", required: true)!)
+                          kind: try string(row, "kind", required: true)!,
+                          introducerID: relations.fields["introducer"] == nil ? nil : try string(row, "introducer"))
         }
         return SocialGraph(people: people, relations: edges, selfID: selfID)
     }

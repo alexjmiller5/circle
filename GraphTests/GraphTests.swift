@@ -191,3 +191,25 @@ private func fixture() -> SocialGraph {
     state.setGrouping(.city, graph: graph)
     #expect(state.focus == .person("me"))
 }
+
+/// Edges record how people met: introductions (who introduced two people, possibly you)
+/// and independent friendships are undirected; met_through stays your directed arrow.
+@Test func introducedAndKnowsAreUndirectedAndOnePerPair() {
+    let people = ["me", "a", "b", "c", "intro"].map { GraphPerson(id: $0, name: $0) }
+    let graph = SocialGraph(people: people, relations: [
+        GraphRelation(personID: "a", relatedID: "b", kind: "knows"),
+        GraphRelation(personID: "b", relatedID: "a", kind: "introduced", introducerID: "intro"),
+        GraphRelation(personID: "b", relatedID: "c", kind: "introduced", introducerID: "me"),
+        GraphRelation(personID: "a", relatedID: "me", kind: "met_through")
+    ], selfID: "me")
+    let pair = graph.edges.filter { Set([$0.from, $0.to]) == ["a", "b"] }
+    #expect(pair.count == 1)
+    #expect(pair.first?.kind == .knows)
+    #expect(graph.edges.first { Set([$0.from, $0.to]) == ["b", "c"] }?.kind == .introduced)
+    #expect(graph.edges.first { $0.isIntroduction }.map { [$0.from, $0.to] } == ["me", "a"])
+    #expect(graph.neighbors(of: "c") == ["b"])
+    // The introducer is a fact about the pair, not an edge to the introducer.
+    #expect(graph.neighbors(of: "intro").isEmpty)
+    #expect(graph.introducer(of: "b", and: "c") == "me")
+    #expect(graph.introducer(of: "a", and: "b") == "intro")
+}

@@ -137,7 +137,7 @@ struct StoredCircleConnection: Codable, Sendable {
         let canonical = try policy.canonicalConfig(JSONSerialization.data(withJSONObject: rawConfig))
         guard let config = try JSONSerialization.jsonObject(with: canonical) as? [String: Any],
               config["namespace"] as? String == "circle.reader", let fields = config["bindings"] as? [String: Any],
-              Set(fields.keys).subtracting(["photos", "summaries", "imports", "contacts"]) == ["people", "relations", "locations"] else {
+              Set(fields.keys).subtracting(["photos", "summaries", "imports", "contacts", "hangouts"]) == ["people", "relations", "locations"] else {
             throw CircleConnectionError.invalidConfiguration
         }
         let bindings = try JSONDecoder().decode(CirclePeopleBindings.self, from: JSONSerialization.data(withJSONObject: fields))
@@ -168,7 +168,8 @@ struct StoredCircleConnection: Codable, Sendable {
             if let summaries = validated.bindings.summaries, let imports = validated.bindings.imports {
                 do {
                     newHistory = try await CommunicationHistoryReader(client: client)
-                        .read(summaries: summaries, imports: imports, contacts: validated.bindings.contacts)
+                        .read(summaries: summaries, imports: imports, contacts: validated.bindings.contacts,
+                              hangouts: validated.bindings.hangouts)
                     historyFailure = nil
                 } catch is CancellationError { throw CancellationError() }
                 catch { historyFailure = "Contact history could not be refreshed. \(error.localizedDescription)" }

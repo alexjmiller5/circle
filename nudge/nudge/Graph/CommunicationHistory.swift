@@ -4,6 +4,8 @@ import Foundation
 /// Channels the service summarizes. Raw values are the service's vocabulary.
 enum CommunicationChannel: String, Codable, CaseIterable, Sendable {
     case imessage, sms, rcs, phone, facetimeAudio = "facetime_audio", facetimeVideo = "facetime_video", whatsapp
+    /// A logged hangout; never a summary channel.
+    case inPerson = "in_person"
 
     var label: String {
         switch self {
@@ -14,6 +16,7 @@ enum CommunicationChannel: String, Codable, CaseIterable, Sendable {
         case .facetimeAudio: "FaceTime audio"
         case .facetimeVideo: "FaceTime video"
         case .whatsapp: "WhatsApp"
+        case .inPerson: "In person"
         }
     }
 
@@ -23,6 +26,7 @@ enum CommunicationChannel: String, Codable, CaseIterable, Sendable {
         case .imessage, .sms, .rcs: ["apple_messages"]
         case .phone, .facetimeAudio, .facetimeVideo: ["apple_calls"]
         case .whatsapp: ["whatsapp_messages", "whatsapp_calls"]
+        case .inPerson: []
         }
     }
 }
@@ -71,6 +75,17 @@ struct CommunicationHistory: Codable, Equatable, Sendable {
     var sources: [SourceCoverage] = []
     /// Address-book identifiers from confirmed links. Handles are resolved on device and never stored.
     var contactIDs: [String: [String]] = [:]
+    /// Logged hangout days (YYYY-MM-DD, local) per person, oldest first. Optional so older caches still load.
+    var hangouts: [String: [String]]? = nil
+
+    /// Each logged day at local noon, so a day never shifts across a time-zone boundary.
+    func hangoutDays(for person: String, calendar: Calendar) -> [Date] {
+        (hangouts?[person] ?? []).compactMap { day in
+            let parts = day.split(separator: "-").compactMap { Int($0) }
+            guard parts.count == 3 else { return nil }
+            return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12))
+        }
+    }
 
     var refreshedAt: Date? { channels.values.joined().map(\.refreshedAt).max() }
     func coverage(of channel: CommunicationChannel) -> [SourceCoverage] {
@@ -86,12 +101,13 @@ struct CommunicationHistoryReader: Sendable {
         "coverageEnd", "refreshed", "review", "updated", "deleted"]
     static let importKeys: Set<String> = ["id", "source", "instance", "coverage", "reason", "firstEvent", "completed", "updated", "deleted"]
     static let contactKeys: Set<String> = ["id", "person", "platform", "source", "deleted"]
+    static let hangoutKeys: Set<String> = ["id", "date", "people", "deleted"]
     static let sources = ["apple_messages", "apple_calls", "whatsapp_messages", "whatsapp_calls"]
 
     let client: any CircleHTTPClient
 
     func read(summaries: CircleProjectionTable, imports: CircleProjectionTable,
-              contacts: CircleProjectionTable?) async throws -> CommunicationHistory {
+              contacts: CircleProjectionTable?, hangouts: CircleProjectionTable? = nil) async throws -> CommunicationHistory {
         let reader = CirclePeopleReader(client: client)
         var history = CommunicationHistory()
         for values in try summaries.rows(await reader.read(summaries)) {
@@ -132,6 +148,20 @@ struct CommunicationHistoryReader: Sendable {
                 guard try row.date("deleted") == nil else { continue }
                 history.contactIDs[try row.text("person"), default: []].append(try row.text("source"))
             }
+        }
+        if let hangouts {
+            var days: [String: Set<String>] = [:]
+            for values in try hangouts.rows(await reader.read(hangouts)) {
+                let row = Row(values)
+                guard try row.optionalText("deleted") == nil else { continue }
+                let day = try row.text("date")
+                guard day.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil,
+                      let people = try JSONSerialization.jsonObject(with: Data(try row.text("people").utf8)) as? [String] else {
+                    throw CircleConnectionError.invalidResponse
+                }
+                for person in people { days[person, default: []].insert(day) }
+            }
+            history.hangouts = days.mapValues { $0.sorted() }
         }
         return history
     }

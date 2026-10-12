@@ -245,7 +245,9 @@ private struct GraphLayer: View, Equatable {
         var path = Path(); path.move(to: start); path.addLine(to: end)
         let active = state.focus == .person(edge.from) || state.focus == .person(edge.to)
         let color = active ? GraphTheme.accent.opacity(0.7) : Color.secondary.opacity(0.24)
-        context.stroke(path, with: .color(color), lineWidth: active ? 1.6 : 1)
+        // Introductions are dashed; an independent friendship is a hairline next to family and partners.
+        let width = (active ? 1.6 : 1) * (edge.kind == .knows ? 0.7 : 1)
+        context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, dash: edge.kind == .introduced ? [5, 4] : []))
         if edge.isIntroduction {
             var arrow = Path()
             arrow.move(to: CGPoint(x: end.x - dx * 8 - dy * 4, y: end.y - dy * 8 + dx * 4))

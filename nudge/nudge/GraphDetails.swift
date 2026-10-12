@@ -71,6 +71,14 @@ struct GraphDetails: View {
         if let intro = relevant.first(where: { $0.kind == "met_through" }) {
             return intro.personID == id ? "Met through this person" : "Introduced through the selected person"
         }
-        return relevant.map { $0.kind.replacingOccurrences(of: "_", with: " ") }.sorted().joined(separator: ", ")
+        return relevant.map { relation in
+            switch relation.kind {
+            case "introduced":
+                guard let by = relation.introducerID else { return "Introduced" }
+                return by == graph.selfID ? "You introduced them" : "Introduced by \(graph.byID[by]?.name ?? "someone not in Circle")"
+            case "knows": return "Know each other on their own"
+            default: return relation.kind.replacingOccurrences(of: "_", with: " ")
+            }
+        }.sorted().joined(separator: ", ")
     }
 }

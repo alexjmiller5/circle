@@ -1,6 +1,6 @@
 import Foundation
 
-/// What may reset a person's reach-out clock. Hangouts have no recorded source yet.
+/// What may reset a person's reach-out clock.
 enum ContactInteractionKind: String, Codable, CaseIterable, Sendable {
     case outgoingMessage, incomingMessage, answeredCall, hangout
 
@@ -62,8 +62,9 @@ struct PersonContactHistory: Sendable {
     let lastSent: ContactMoment?
     let lastReceived: ContactMoment?
     let lastAnsweredCall: ContactMoment?
+    let lastHangout: ContactMoment?
 
-    init(_ channels: [ChannelSummary], now: Date) {
+    init(_ channels: [ChannelSummary], hangouts: [Date] = [], now: Date) {
         self.channels = channels
         func newest(_ date: (ChannelSummary) -> Date?) -> ContactMoment? {
             channels.compactMap { summary in date(summary).flatMap { $0 <= now ? ContactMoment(date: $0, channel: summary.channel) : nil } }
@@ -72,6 +73,7 @@ struct PersonContactHistory: Sendable {
         lastSent = newest(\.lastSent)
         lastReceived = newest(\.lastReceived)
         lastAnsweredCall = newest(\.lastAnsweredCall)
+        lastHangout = hangouts.filter { $0 <= now }.max().map { ContactMoment(date: $0, channel: .inPerson) }
     }
 
     func latest(_ kind: ContactInteractionKind) -> ContactMoment? {
@@ -79,7 +81,7 @@ struct PersonContactHistory: Sendable {
         case .outgoingMessage: lastSent
         case .incomingMessage: lastReceived
         case .answeredCall: lastAnsweredCall
-        case .hangout: nil
+        case .hangout: lastHangout
         }
     }
 }
@@ -107,7 +109,8 @@ struct ReachOutAssessment: Sendable {
 
     init(personID: String, history: CommunicationHistory?, settings: ReachOutPreferences, now: Date,
          calendar: Calendar = .current) {
-        let person = PersonContactHistory(history?.channels[personID] ?? [], now: now)
+        let person = PersonContactHistory(history?.channels[personID] ?? [],
+                                          hangouts: history?.hangoutDays(for: personID, calendar: calendar) ?? [], now: now)
         lastContact = settings.resetKinds.compactMap { kind in person.latest(kind).map { Evidence(kind: kind, moment: $0) } }
             .max { $0.moment.date < $1.moment.date }
         lastIncoming = person.lastReceived

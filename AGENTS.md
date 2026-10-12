@@ -14,7 +14,8 @@ The Reach out tab reads the service's maintained communication summaries and
 import coverage (never streams or source apps): per person, best-of across
 channels for last sent message, last answered call and last received message.
 The default clock resets on a sent direct message, an answered direct call or
-a logged hangout (no hangout source exists yet); incoming-only activity is
+a logged hangout (the optional `hangouts` binding: newest past day per person,
+counted at local noon; hangout reminders are not built); incoming-only activity is
 shown but resets only when enabled per person. Groups: Due now (elapsed past
 cadence), Not contacted in 1 month, Not contacted in 3 weeks, History unknown,
 Snoozed, In touch, each row with its reason. Missing history or no qualifying
@@ -127,7 +128,9 @@ keep them in sync with it. Never print signing values or device identifiers.
   stay unknown; local inventory is not proof of complete history.
 
 Keep canonical identity and recorded direction. Shared circles never imply
-friendship. Base city is not current presence. Unknown is explicit. Views
+friendship. Edges: met_through is the directed arrow; `introduced` (dashed,
+details name the introducer from the optional relations `introducer` field) and
+`knows` (hairline) are undirected, one edge per pair, strongest kind drawn. Base city is not current presence. Unknown is explicit. Views
 cache layout positions; no all-pairs force layout per animation frame. The
 constellation shelf-packs each group as a disk sized by its own members. A
 gesture offsets or scales the already rendered graph layer (twice the
@@ -151,7 +154,8 @@ bindings; personal schema and values never ship in this repo. The reader
 requires exactly the grants `CirclePeopleBindings.scopes` derives: projected
 columns for people, relations, locations and the optional photos binding, the
 optional history bindings (`summaries` and `imports` together, `contacts` for
-address-book links), plus one `files:read:<prefix>` per photo binding `files`
+address-book links, `hangouts` for logged hangouts), the optional relations
+`introducer` field, plus one `files:read:<prefix>` per photo binding `files`
 prefix (live: 56 columns, `photos/people/` and `photos/records/`, 58 grants). History reads are
 the full summary table, imports by equality on source (newest live run per
 source decides its coverage) and links by equality on the address-book

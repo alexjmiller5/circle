@@ -202,7 +202,7 @@ struct ReachOutSections: View {
             cadence(settings.hangoutCadence, prefix: "hangout-cadence")
             Toggle("Hangout reminders", isOn: settings.hangoutRemindersEnabled)
         } header: { Text("In-person hangouts") } footer: {
-            Text("Hangouts are not recorded yet, so this cadence has no due date and sends no reminders.")
+            Text("Logged hangouts reset the reach-out clock. Hangout reminders are not sent yet.")
         }
         Section("Reminders") {
             Toggle("Reach-out reminders", isOn: Binding(get: { settings.wrappedValue.remindersEnabled }, set: { on in

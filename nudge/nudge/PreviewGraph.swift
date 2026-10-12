@@ -20,7 +20,9 @@ enum PreviewGraph {
         }
         let relations = (1...15).map { i in
             GraphRelation(personID: people[i].id, relatedID: people[(i - 1) / 3].id, kind: "met_through")
-        }
+        } + [GraphRelation(personID: "person-04", relatedID: "person-08", kind: "introduced", introducerID: "person-00"),
+             GraphRelation(personID: "person-05", relatedID: "person-09", kind: "introduced", introducerID: "person-02"),
+             GraphRelation(personID: "person-06", relatedID: "person-10", kind: "knows")]
         return SocialGraph(people: people, relations: relations, selfID: people[0].id)
     }()
 

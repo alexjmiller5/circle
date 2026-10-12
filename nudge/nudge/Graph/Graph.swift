@@ -34,12 +34,21 @@ struct GraphRelation: Equatable, Codable, Sendable {
     let personID: String
     let relatedID: String
     let kind: String
+    /// Who introduced the pair, for `introduced` relations only.
+    var introducerID: String? = nil
+}
+
+/// met_through is your directed arrow; the rest are undirected, one per pair, strongest kind kept.
+enum GraphEdgeKind: Int, Comparable, Sendable {
+    case introduced, knows, tie, metThrough
+    static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
 }
 
 struct GraphEdge: Identifiable, Equatable, Sendable {
     let from: String
     let to: String
-    let isIntroduction: Bool
+    let kind: GraphEdgeKind
+    var isIntroduction: Bool { kind == .metThrough }
     var id: String { "\(isIntroduction):\(from):\(to)" }
 }
 
@@ -78,11 +87,16 @@ struct SocialGraph: Sendable {
         var edgeMap: [String: GraphEdge] = [:]
         var adjacency: [String: Set<String>] = [:]
         for relation in self.relations {
-            let introduction = relation.kind == "met_through"
+            let kind: GraphEdgeKind = switch relation.kind {
+            case "met_through": .metThrough
+            case "introduced": .introduced
+            case "knows": .knows
+            default: .tie
+            }
             let pair = [relation.personID, relation.relatedID].sorted()
-            let edge = GraphEdge(from: introduction ? relation.relatedID : pair[0],
-                                 to: introduction ? relation.personID : pair[1],
-                                 isIntroduction: introduction)
+            let edge = GraphEdge(from: kind == .metThrough ? relation.relatedID : pair[0],
+                                 to: kind == .metThrough ? relation.personID : pair[1], kind: kind)
+            if let existing = edgeMap[edge.id], existing.kind >= kind { continue }
             edgeMap[edge.id] = edge
             adjacency[edge.from, default: []].insert(edge.to)
             adjacency[edge.to, default: []].insert(edge.from)
@@ -92,6 +106,11 @@ struct SocialGraph: Sendable {
     }
 
     func neighbors(of id: String) -> Set<String> { adjacency[id] ?? [] }
+
+    /// Who introduced two people, when an `introduced` relation records it.
+    func introducer(of a: String, and b: String) -> String? {
+        relations.first { $0.kind == "introduced" && Set([$0.personID, $0.relatedID]) == [a, b] }?.introducerID
+    }
 
     func depths(from id: String) -> [String: Int] {
         guard byID[id] != nil else { return [:] }
