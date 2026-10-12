@@ -14,7 +14,7 @@ priority, qualifying interactions, reminder preferences and snooze. Unknown
 history stays explicit. Preview preferences are isolated from connected data.
 
 Normal launch offers a read-only People connection through browser-approved
-Life Data enrollment. A complete refresh replaces the graph; failed refreshes
+Soma enrollment. A complete refresh replaces the graph; failed refreshes
 preserve its private offline copy. The **Map** tab pins people at their single
 current base with their photo, groups everyone in one city (and in cities that
 would overlap at the current zoom) under one pin that opens a chooser, filters
@@ -90,7 +90,7 @@ and its GitHub secret come from `op-project-bootstrap .env.tpl --repo <owner>/ci
 
 ## Connect People
 
-Enter your Life Data service's HTTPS origin and choose **Connect to People**.
+Enter your Soma hub's HTTPS origin and choose **Connect to People**.
 Open the approval link and verify its code and read-only grants. Circle keeps
 its generated device credential in the native Keychain. The operator configures
 `circle-reader`; customers never enter table names or an operator token.
@@ -118,7 +118,7 @@ unapproved link is not proof of server revocation; check service devices if it
 was approved afterward.
 
 The bundled pure policy is pinned by `scripts/bundle_life_core.py`. Rebuild it
-from the script's pinned clean Life Data revision with `--source <checkout>`;
+from the script's pinned clean Soma revision with `--source <checkout>`;
 networking and secure storage remain native. Synthetic fixtures never contact
 or modify the real service.
 

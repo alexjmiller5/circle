@@ -148,7 +148,7 @@ preview preferences use a separate key from connected profiles.
 
 ## People service boundary
 
-Circle is a dedicated read-only Life Data consumer through its supported API.
+Circle is a dedicated read-only Soma consumer through its supported API.
 The service owns the `circle-reader` profile and `circle.reader` table/column
 bindings; personal schema and values never ship in this repo. The reader
 requires exactly the grants `CirclePeopleBindings.scopes` derives: projected
@@ -172,7 +172,7 @@ opaque cursors and rejecting duplicate IDs; it makes no current-presence or
 full-coverage claim. Only stream records accept bounded query parameters. No
 stream enrollment UI or live credential is connected.
 
-Use canonical Life Core policy via the pinned bundled JavaScript resource;
+Use canonical Soma core policy via the pinned bundled JavaScript resource;
 `scripts/bundle_life_core.py` rebuilds it. File grants need a pin whose scope
 grammar accepts `files:` (the current pin does); an older pin rejects such a
 profile at approval and revokes the candidate. Never duplicate its validation policy
