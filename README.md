@@ -197,7 +197,8 @@ services.circle-push = {
   teamId = "ABCDE12345"; keyId = "KEY1234567";
   checksStream = "friend_city_checks"; locationStream = "location";
   peopleTable = "people"; peopleNameColumn = "name";
-  allowedLogins = [ "alice@example.com" ];   # tailnet users who may register a phone
+  # allowTailnetOwner = true;                # this Mac's tailnet owner may register a phone (default)
+  # allowedLogins = [ "bob@example.com" ];    # anyone else on the tailnet
   tailscaleHttpsPort = 8445;                  # phones register at https://<mac>.<tailnet>.ts.net:8445
 };
 ```

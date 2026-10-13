@@ -76,3 +76,14 @@ public enum DeviceRegistration {
         return (204, PushDevice(token: token, environment: environment, registeredAt: Date()))
     }
 }
+
+/// Reads `tailscale status --json` for the login of the user who owns this machine.
+public enum TailnetOwner {
+    public static func login(status: Data) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: status) as? [String: Any],
+              let me = object["Self"] as? [String: Any], let id = me["UserID"] as? Int,
+              let users = object["User"] as? [String: Any], let user = users[String(id)] as? [String: Any],
+              let login = user["LoginName"] as? String, !login.isEmpty else { return nil }
+        return login
+    }
+}

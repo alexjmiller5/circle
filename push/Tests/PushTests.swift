@@ -163,3 +163,11 @@ private func check(_ id: String, at: Double, city: String = "City A") -> String 
     _ = try await evaluator.step(&fresh, now: Date(timeIntervalSince1970: t0 + 30))
     #expect(try await evaluator.step(&fresh, now: Date(timeIntervalSince1970: t0 + 390)).isEmpty)
 }
+
+/// The machine's own tailnet owner may register without naming them in config.
+@Test func tailnetOwnerComesFromThisMachinesStatus() {
+    let status = Data(#"{"Self":{"UserID":42,"HostName":"mini"},"User":{"42":{"ID":42,"LoginName":"owner@example.com"},"7":{"ID":7,"LoginName":"tagged-devices"}}}"#.utf8)
+    #expect(TailnetOwner.login(status: status) == "owner@example.com")
+    #expect(TailnetOwner.login(status: Data(#"{"Self":{"UserID":9},"User":{}}"#.utf8)) == nil)
+    #expect(TailnetOwner.login(status: Data("not json".utf8)) == nil)
+}

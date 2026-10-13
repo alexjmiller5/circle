@@ -63,7 +63,13 @@ in
     allowedLogins = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
-      description = "Tailnet logins allowed to register a phone. Empty refuses every registration.";
+      description = "Further tailnet logins allowed to register a phone.";
+    };
+
+    allowTailnetOwner = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Accept phones of this machine's own tailnet owner (read from `tailscale status`).";
     };
 
     listenPort = lib.mkOption {
@@ -120,6 +126,7 @@ in
         "--listen-port" (toString cfg.listenPort)
         "--interval" (toString cfg.interval)
       ] ++ lib.concatMap (login: [ "--allowed-login" login ]) cfg.allowedLogins
+        ++ lib.optionals cfg.allowTailnetOwner [ "--allow-tailnet-owner" "--tailscale" "${config.services.tailscale.package}/bin/tailscale" ]
         ++ lib.optional cfg.hideNames "--hide-names";
       KeepAlive = true;
       RunAtLoad = true;

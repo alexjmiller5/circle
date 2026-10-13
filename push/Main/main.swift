@@ -16,6 +16,7 @@ Required: --hub URL --hub-token-cmd CMD --apns-key-cmd CMD --team-id ID --key-id
 Optional: --state-dir DIR (default ~/Library/Application Support/circle-push) --listen-port N (default 8787)
           --allowed-login LOGIN (repeatable; tailnet users who may register a phone) --interval SECONDS (default 120)
           --hide-names (lock-screen privacy: no names or places in alerts)
+          --allow-tailnet-owner (also accept this machine's tailnet owner; --tailscale PATH, default tailscale)
 Secrets arrive only through the commands' stdout (the APNs key as its .p8 text or base64 of it).
 """
 
@@ -27,7 +28,7 @@ func parseArguments() -> (mode: String, options: [String: [String]], flags: Set<
     while let name = arguments.first {
         arguments.removeFirst()
         guard name.hasPrefix("--") else { print(usage); exit(64) }
-        if name == "--hide-names" { flags.insert(name); continue }
+        if ["--hide-names", "--allow-tailnet-owner"].contains(name) { flags.insert(name); continue }
         guard let value = arguments.first else { print(usage); exit(64) }
         arguments.removeFirst()
         options[name, default: []].append(value)
@@ -96,7 +97,20 @@ if mode == "test" {
 }
 
 // Registrations from the phone arrive through `tailscale serve` on this loopback port.
-let allowedLogins = Set(options["--allowed-login"] ?? [])
+/// This machine's tailnet owner, read once at startup.
+func tailnetOwner() -> String? {
+    let process = Process(), pipe = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = [options["--tailscale"]?.last ?? "tailscale", "status", "--json"]
+    process.standardOutput = pipe
+    guard (try? process.run()) != nil else { return nil }
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    return process.terminationStatus == 0 ? TailnetOwner.login(status: data) : nil
+}
+let owner = flags.contains("--allow-tailnet-owner") ? tailnetOwner() : nil
+if flags.contains("--allow-tailnet-owner") && owner == nil { log(["warning": "tailnet owner unknown; only --allowed-login users may register"]) }
+let allowedLogins = Set((options["--allowed-login"] ?? []) + [owner].compactMap { $0 })
 let port = NWEndpoint.Port(rawValue: UInt16(options["--listen-port"]?.last ?? "8787") ?? 8787)!
 let parameters = NWParameters.tcp
 parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: port)
