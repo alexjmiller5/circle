@@ -2,16 +2,16 @@ import Foundation
 
 /// One validated Find My city check (`findmy_ax`): region grade, never a coordinate or fix time.
 /// `checkedAt` is collection time; `ageSeconds` is the displayed age, nil when not exact.
-struct FriendCityCheck: Equatable, Sendable {
-    let personID: String
-    let city: String
-    let region: String?
-    let country: String?
-    let locationText: String
-    let ageSeconds: Double?
-    let paused: Bool
-    let checkID: String
-    let checkedAt: Date
+public struct FriendCityCheck: Equatable, Sendable {
+    public let personID: String
+    public let city: String
+    public let region: String?
+    public let country: String?
+    public let locationText: String
+    public let ageSeconds: Double?
+    public let paused: Bool
+    public let checkID: String
+    public let checkedAt: Date
 
     private struct Record: Decodable {
         let personId, city, locationText, sourceCheckId, source: String
@@ -22,7 +22,7 @@ struct FriendCityCheck: Equatable, Sendable {
     }
 
     /// nil for anything that is not exactly one collector record.
-    static func parse(_ body: String) -> FriendCityCheck? {
+    public static func parse(_ body: String) -> FriendCityCheck? {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         guard let record = try? decoder.decode(Record.self, from: Data(body.utf8)), record.source == "findmy_ax",
@@ -38,13 +38,17 @@ struct FriendCityCheck: Equatable, Sendable {
 }
 
 /// Where this device is, city-level, as the system geocoder names it.
-struct CurrentPlace: Codable, Equatable, Sendable {
-    let city: String?
+public struct CurrentPlace: Codable, Equatable, Sendable {
+    public let city: String?
     /// A named part of the city, such as a borough.
-    let district: String?
-    let region: String?
-    let country: String?
-    let countryCode: String?
+    public let district: String?
+    public let region: String?
+    public let country: String?
+    public let countryCode: String?
+
+    public init(city: String?, district: String?, region: String?, country: String?, countryCode: String?) {
+        self.city = city; self.district = district; self.region = region; self.country = country; self.countryCode = countryCode
+    }
 }
 
 enum NearbyArea {
@@ -65,21 +69,23 @@ enum NearbyArea {
     }
 }
 
-struct NearbyAlert: Equatable, Sendable {
-    let personID: String
-    let checkID: String
-    let locationText: String
-    let ageSeconds: Double
-    let checkedAt: Date
+public struct NearbyAlert: Equatable, Sendable {
+    public let personID: String
+    public let checkID: String
+    public let locationText: String
+    public let ageSeconds: Double
+    public let checkedAt: Date
 }
 
 /// Per-profile visit state for everyone with a fresh location (no opt-in or circle gate).
-struct NearbyWatch: Codable, Sendable {
+public struct NearbyWatch: Codable, Sendable {
     private var visits: [String: NearbyVisit] = [:]
+
+    public init() {}
 
     /// Measured 2026-10-09 (p99 displayed age 6 min): fresh = not paused, displayed age at most
     /// 10 min and the check itself at most 15 min old. Returns arrivals confirmed by these checks.
-    mutating func observe(_ checks: [FriendCityCheck], place: CurrentPlace?, now: Date,
+    public mutating func observe(_ checks: [FriendCityCheck], place: CurrentPlace?, now: Date,
                           maxAgeSeconds: Double = 600, maxCheckAgeSeconds: Double = 900) -> [NearbyAlert] {
         checks.sorted { ($0.checkedAt, $0.checkID) < ($1.checkedAt, $1.checkID) }.compactMap { check in
             let age = check.ageSeconds
@@ -96,11 +102,11 @@ struct NearbyWatch: Codable, Sendable {
     }
 }
 
-enum NearbyAlerts {
+public enum NearbyAlerts {
     static let prefix = "circle.nearby."
 
     /// Shows the observed place and says nearby, never the same town or a distance it cannot know.
-    static func notification(_ alert: NearbyAlert, name: String, settings: ReminderSettings) -> (id: String, title: String, body: String) {
+    public static func notification(_ alert: NearbyAlert, name: String, settings: ReminderSettings) -> (id: String, title: String, body: String) {
         let minutes = Int(alert.ageSeconds / 60)
         let updated = minutes < 1 ? "just before the check" : "\(minutes) min before the check"
         return ("\(prefix)\(alert.personID).\(alert.checkID)",

@@ -2,6 +2,9 @@ import SwiftUI
 
 @main
 struct CircleApp: App {
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor(CircleAppDelegate.self) private var delegate
+    #endif
     init() { ReachOutNotifications.shared.register() }
 
     var body: some Scene {

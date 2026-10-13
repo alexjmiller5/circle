@@ -38,6 +38,8 @@ targets:
         release:
           PRODUCT_BUNDLE_IDENTIFIER: com.alexmiller.circle
           PROVISIONING_PROFILE_SPECIFIER: ${IOS_PROFILE}
+          # Nearby alerts arrive as production pushes; Circle's own Ad Hoc profile carries Push.
+          CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]: nudge/Circle-iOS.entitlements
   CircleUITests:
     type: bundle.ui-testing
     supportedDestinations: [iOS, macOS]

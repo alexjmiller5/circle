@@ -36,9 +36,24 @@ per person/profile; unknown or paused readings never prove departure.
 `NearbyAlerts.swift` parses one `findmy_ax` collector record, matches it
 city-only (same city or this device's district, region/country agreeing when
 both show one; no metro or distance inference) and defaults to the measured
-freshness (not paused, displayed age <= 600 s, check <= 900 s old). This logic
-is not connected to a live feed, this device's location or notification
-delivery.
+freshness (not paused, displayed age <= 600 s, check <= 900 s old).
+
+Nearby alerts are delivered by `circle-push` (SwiftPM `push/`: library
+`CirclePush`, executable `circle-push`, tests `push/Tests`), a service on the
+Mac that runs the Find My collector, never the phone. Each run it walks
+`friend_city_checks` pages from its saved cursor (re-reading the last page),
+geocodes the latest fix of the location stream with Apple's geocoder, applies
+`NearbyWatch`, and sends straight to APNs with Circle's own key (ES256 provider
+token, production or sandbox per device). Its state (`state.json` cursor +
+visits, `devices.json` tokens) lives in its state dir, 0600. Phones register at
+`POST /devices {token, environment}` on a loopback port exposed by
+`tailscale serve`; only `--allowed-login` tailnet users are accepted. Secrets
+arrive only through `--hub-token-cmd` / `--apns-key-cmd`. The iOS app's
+Connection sheet has the alerts server field and registration; Release iOS
+builds carry `aps-environment` (needs Circle's own Ad Hoc profile with Push,
+never the wildcard). `nix/push-package.nix` builds it with Swift 6 from this
+flake's own nixpkgs; `nix/darwin-module.nix` is `services.circle-push`.
+`circle-push test` sends a labeled test notification to every registered phone.
 The Map tab pins each person with exactly one current base (city-level,
 geocoded on device) with their photo; one pin per city, merged with nearby
 cities while they would overlap on screen (Mercator distance at the settled
@@ -118,8 +133,11 @@ keep them in sync with it. Never print signing values or device identifiers.
   `ReachOutModel.swift` (per-profile settings, notification scheduling and the
   Snooze action), `ReachOutView.swift`, `ContactActions.swift` (Contacts
   access and URL opening), `CircleChrome.swift` (shared avatar thumbnails and
-  the bottom-right menu). `PreviewGraph.swift` serves generated portraits to
-  the explicit preview only.
+  the bottom-right menu), `NearbyAlertsView.swift` (alerts server setting,
+  APNs token registration, app delegate). `PreviewGraph.swift` serves
+  generated portraits to the explicit preview only.
+- `push/`: the nearby-alert push service (see above); `nix/`: its package and
+  nix-darwin module.
 - `GraphTests/`: Swift Testing, including large graphs and invalid preferences.
 - `nudge/nudgeUITests/`: real native interactions through XCTest.
 - `scripts/call_log.py`, `tests/`: read-only call reader, scoped event identity,

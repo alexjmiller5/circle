@@ -1,11 +1,13 @@
 import Foundation
 
 /// Device-wide reminder delivery choices; whether a person is reminded is per-person and off by default.
-struct ReminderSettings: Codable, Equatable, Sendable {
+public struct ReminderSettings: Codable, Equatable, Sendable {
     var quietStartHour = 21
     var quietEndHour = 9
     /// Lock-screen privacy: notifications never carry the person's name.
-    var hideNames = false
+    public var hideNames = false
+
+    public init() {}
 
     /// Moves a moment inside the quiet window to the window's end. Equal hours mean no quiet window.
     func outsideQuietHours(_ date: Date, calendar: Calendar) -> Date {

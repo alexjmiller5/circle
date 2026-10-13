@@ -106,6 +106,9 @@ struct ConnectedCircleView: View {
                 if model.graph == nil {
                     Button("Retry loading People") { Task { await model.refresh() } }.disabled(model.busy)
                 }
+                Divider()
+                NearbyAlertsSettings()
+                Divider()
                 Button("Disconnect and remove cached people", role: .destructive) {
                     Task { await model.disconnect() }
                 }.disabled(model.busy)

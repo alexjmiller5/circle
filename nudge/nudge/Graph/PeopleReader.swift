@@ -1,16 +1,21 @@
 import Foundation
 
-struct CircleHTTPReply: Sendable { let status: Int; let data: Data }
-protocol CircleHTTPClient: Sendable {
+public struct CircleHTTPReply: Sendable {
+    public let status: Int
+    public let data: Data
+    public init(status: Int, data: Data) { self.status = status; self.data = data }
+}
+public protocol CircleHTTPClient: Sendable {
     func request(path: String, method: String, body: Data?, maxBytes: Int) async throws -> CircleHTTPReply
 }
 
-struct CirclePeopleReader: Sendable {
+public struct CirclePeopleReader: Sendable {
     let client: any CircleHTTPClient
+    public init(client: any CircleHTTPClient) { self.client = client }
 
     /// Complete bounded scan, not a cross-page or cross-table snapshot.
     /// Nothing is published until every page has passed validation.
-    func read(_ table: CircleProjectionTable, where filters: [String: String] = [:]) async throws -> Data {
+    public func read(_ table: CircleProjectionTable, where filters: [String: String] = [:]) async throws -> Data {
         guard Set(filters.keys).isSubset(of: Set(table.columns)) else {
             throw CircleConnectionError.invalidConfiguration
         }

@@ -1,6 +1,6 @@
 import Foundation
 
-final class CircleHTTPTransport: CircleHTTPClient, @unchecked Sendable {
+public final class CircleHTTPTransport: CircleHTTPClient, @unchecked Sendable {
     let endpoint: URL
     private let token: String
     private let session: URLSession
@@ -15,7 +15,7 @@ final class CircleHTTPTransport: CircleHTTPClient, @unchecked Sendable {
         return url
     }
 
-    init(endpoint: String, token: String, configuration: URLSessionConfiguration = .ephemeral) throws {
+    public init(endpoint: String, token: String, configuration: URLSessionConfiguration = .ephemeral) throws {
         self.endpoint = try Self.canonicalEndpoint(endpoint)
         guard !token.isEmpty, token.utf8.count <= 4096,
               !token.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }) else {
@@ -51,7 +51,7 @@ final class CircleHTTPTransport: CircleHTTPClient, @unchecked Sendable {
         }
     }
 
-    func request(path: String, method: String, body: Data?, maxBytes: Int) async throws -> CircleHTTPReply {
+    public func request(path: String, method: String, body: Data?, maxBytes: Int) async throws -> CircleHTTPReply {
         let route = String(path.prefix { $0 != "?" })
         guard route.hasPrefix("/v1/"), !path.contains("#"), !route.contains("%"),
               !route.contains(".."), !path.contains("\\"), !route.contains("//"),

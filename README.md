@@ -180,6 +180,34 @@ the service's bounded original-body pages with opaque cursor encoding and
 exact read-only enrollment checks. It creates no profile or credential and
 does not treat a whole-stream append as a latest-per-person position.
 
+## Nearby alert push service
+
+`circle-push` runs on the Mac that collects Find My checks. It evaluates the
+approved visit rules every two minutes and pushes "Sam is nearby" straight to
+APNs, so alerts arrive with the phone asleep. Install it with the flake's
+`darwinModules.default`:
+
+```nix
+services.circle-push = {
+  enable = true;
+  user = "alice";
+  hubUrl = "https://soma.example.workers.dev";
+  hubTokenCommand = "/usr/bin/security find-generic-password -s circle-push -a soma-hub -w";
+  apnsKeyCommand = "/usr/bin/security find-generic-password -s circle-push -a apns-key -w";
+  teamId = "ABCDE12345"; keyId = "KEY1234567";
+  checksStream = "friend_city_checks"; locationStream = "location";
+  peopleTable = "people"; peopleNameColumn = "name";
+  allowedLogins = [ "alice@example.com" ];   # tailnet users who may register a phone
+  tailscaleHttpsPort = 8445;                  # phones register at https://<mac>.<tailnet>.ts.net:8445
+};
+```
+
+The hub token needs exactly `streams:read:<checks>`, `streams:read:<location>`
+and `tables:read:<people>:id|name|deleted_at`. The APNs key is a Circle-only
+.p8 key (stored as base64 or PEM). Then, in the iPhone app: Connection, enter the
+alerts server address, and tap "Send nearby alerts to this phone".
+`circle-push test ...` (same flags) sends a labeled test push.
+
 ## Call history utility
 
 The read-only macOS SQLite utility is available via `just calls` and as an

@@ -1,15 +1,19 @@
 import Foundation
 
-struct CircleStreamPage: Sendable {
-    struct Entry: Sendable { let id: String; let body: String }
-    let entries: [Entry]
-    let nextCursor: String?
+public struct CircleStreamPage: Sendable {
+    public struct Entry: Sendable {
+        public let id: String
+        public let body: String
+    }
+    public let entries: [Entry]
+    public let nextCursor: String?
 }
 
 /// One bounded page of original append bodies, not a snapshot, source fix,
 /// latest-per-person result or proof of complete source coverage.
-struct CircleStreamReader: Sendable {
+public struct CircleStreamReader: Sendable {
     let client: any CircleHTTPClient
+    public init(client: any CircleHTTPClient) { self.client = client }
 
     static func validCursor(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 8192 && value.utf8.allSatisfy {
@@ -17,7 +21,7 @@ struct CircleStreamReader: Sendable {
         }
     }
 
-    func page(stream: String, cursor: String? = nil) async throws -> CircleStreamPage {
+    public func page(stream: String, cursor: String? = nil) async throws -> CircleStreamPage {
         guard (1...64).contains(stream.utf8.count), stream.utf8.allSatisfy({
             (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || [45, 95].contains($0)
         }), cursor.map(Self.validCursor) ?? true else { throw CircleConnectionError.invalidConfiguration }

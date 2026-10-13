@@ -1,12 +1,16 @@
 import Foundation
 
 /// Service-owned table and column bindings. Customers supply no schema internals.
-struct CircleProjectionTable: Codable, Sendable {
+public struct CircleProjectionTable: Codable, Sendable {
     let table: String
     let fields: [String: String]
     /// Retained-file prefixes readable for this table's keys (photos only).
     var files: [String]? = nil
     var columns: [String] { Array(Set(fields.values)).sorted() }
+
+    public init(table: String, fields: [String: String], files: [String]? = nil) {
+        self.table = table; self.fields = fields; self.files = files
+    }
 
     func validate(keys: Set<String>, optional: Set<String> = [], files expectsFiles: Bool = false) throws {
         let valid: (String) -> Bool = { $0.range(of: "^[A-Za-z][A-Za-z0-9_]*$", options: .regularExpression) != nil }
@@ -21,7 +25,7 @@ struct CircleProjectionTable: Codable, Sendable {
               columns.count == fields.count else { throw CircleConnectionError.invalidConfiguration }
     }
 
-    func rows(_ data: Data) throws -> [[String: Any]] {
+    public func rows(_ data: Data) throws -> [[String: Any]] {
         guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             throw CircleConnectionError.invalidResponse
         }
