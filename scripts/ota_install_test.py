@@ -63,6 +63,8 @@ class ShelfTests(unittest.TestCase):
         self.assertEqual(html.count('itms-services://?action=download-manifest'), 2)
         self.assertIn(f'url={self.base}/com.example.two/manifest.plist?v=2000', html)
         self.assertIn('background:#0a84ff', html)
+        # The build number tells two builds of one version apart on the phone.
+        self.assertIn('<h2>One 1.0 (1)</h2>', html)
 
     def test_empty_index_says_so(self):
         self.assertIn('Nothing to install', self.ota.render_index([], self.base))

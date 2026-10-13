@@ -100,7 +100,8 @@ def prune(www, now):
 
 def render_index(listed, base):
     sections = ''.join(
-        f"<section><h2>{html.escape(e['title'])} {html.escape(e['version'])}</h2>"
+        f"<section><h2>{html.escape(e['title'])} {html.escape(e['version'])}"
+        f"{' (' + html.escape(e['build']) + ')' if e.get('build') else ''}</h2>"
         f"<p><a style=\"{BUTTON}\" href=\"itms-services://?action=download-manifest&amp;"
         f"url={base}/{e['bundle']}/manifest.plist?v={int(e['added'])}\">Install</a></p></section>"
         for e in listed) or '<p>Nothing to install right now.</p>'
