@@ -52,6 +52,8 @@ struct ReachOutTab: View {
                     }
                 }
             }
+            // The last row scrolls clear of the floating Circle menu.
+            .contentMargins(.bottom, 64, for: .scrollContent)
             .navigationTitle("Reach out")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -81,8 +83,9 @@ struct ReachOutCoverageSummary: View {
                 ForEach(history.sources, id: \.source) { source in
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(source.label): \(source.state.rawValue) · read \(source.completedAt.formatted(date: .abbreviated, time: .shortened))")
-                        if let reason = source.reason, source.state != .complete { Text(reason).lineLimit(2) }
+                        if let reason = source.reason, source.state != .complete { Text(reason) }
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                     .font(.caption).foregroundStyle(source.state == .complete ? Color.secondary : Color.orange)
                     .accessibilityElement(children: .combine)
                 }

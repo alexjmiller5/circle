@@ -213,3 +213,12 @@ private func fixture() -> SocialGraph {
     #expect(graph.introducer(of: "b", and: "c") == "me")
     #expect(graph.introducer(of: "a", and: "b") == "intro")
 }
+
+/// The overview (no focus, e.g. no self record) covers everyone: the card counts them and the
+/// camera centers on them; a person or group covers only its own members.
+@Test func noFocusCoversEveryone() {
+    let graph = SocialGraph(people: [GraphPerson(id: "a", name: "Person A"), GraphPerson(id: "b", name: "Person B")], relations: [], selfID: nil)
+    #expect(Set(graph.members(of: nil, grouping: .circles, location: .base)) == ["a", "b"])
+    #expect(graph.members(of: .person("a"), grouping: .circles, location: .base) == ["a"])
+    #expect(graph.members(of: .person("missing"), grouping: .circles, location: .base).isEmpty)
+}

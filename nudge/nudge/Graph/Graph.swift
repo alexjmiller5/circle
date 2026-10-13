@@ -186,7 +186,8 @@ struct SocialGraph: Sendable {
         switch focus {
         case .person(let id): return byID[id] == nil ? [] : [id]
         case .group(let id): return groups(by: grouping, location: location).first { $0.id == id }?.members ?? []
-        case nil: return []
+        // No focus is the overview: everyone, so the camera finds people even without a self record.
+        case nil: return people.map(\.id)
         }
     }
 }
