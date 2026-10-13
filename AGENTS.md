@@ -15,7 +15,7 @@ import coverage (never streams or source apps): per person, best-of across
 channels for last sent message, last answered call and last received message.
 The default clock resets on a sent direct message, an answered direct call or
 a logged hangout (the optional `hangouts` binding: newest past day per person,
-counted at local noon; hangout reminders are not built); incoming-only activity is
+counted at local noon; same-city hangout reminders come from `circle-push`); incoming-only activity is
 shown but resets only when enabled per person. Groups: Due now (elapsed past
 cadence), Not contacted in 1 month, Not contacted in 3 weeks, History unknown,
 Snoozed, In touch, each row with its reason. Missing history or no qualifying
@@ -182,7 +182,8 @@ preview preferences use a separate key from connected profiles.
 
 ## People service boundary
 
-Circle is a dedicated read-only Soma consumer through its supported API.
+Circle is a dedicated Soma consumer through its supported API (reads, plus the
+two narrow writes above).
 The service owns the `circle-editor-v1` profile and its `circle.reader` table/column
 bindings; personal schema and values never ship in this repo. The reader
 requires exactly the grants `CirclePeopleBindings.scopes` derives: projected
@@ -196,7 +197,7 @@ source decides its coverage) and links by equality on the address-book
 platform; tombstones are dropped. A failed history read keeps the last
 history beside a fresh People graph. Photos are requested only for keys under a granted prefix;
 other keys show as stored outside Circle's access without a request. No broad
-token, schema pull, replica sync, writes or streams follow from that grant. Each device enrolls its own credential
+token, schema pull, replica sync, other writes or streams follow from that grant. Each device enrolls its own credential
 and keeps it in native Keychain storage. Service rotation/revision changes
 require explicit reenrollment, never a wider fallback.
 

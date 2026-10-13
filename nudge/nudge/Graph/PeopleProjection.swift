@@ -76,11 +76,13 @@ struct CirclePeopleBindings: Codable, Sendable {
     }
 
     var scopes: [String] {
-        Set(([people, relations, locations] + [photos, summaries, imports, contacts, hangouts].compactMap { $0 }).flatMap { table in
-            table.columns.map { "tables:read:\(table.table):\($0)" }
-        } + (photos?.files ?? []).map { "files:read:" + $0 }
-          + (cadenceEditable ? ["tables:patch:\(people.table):\(people.fields["hangoutCadence"]!)"] : [])
-          + (hangoutLog.map { ["rows:create:\($0.policy.id):\($0.policy.revision)"] } ?? [])).sorted()
+        let optional: [CircleProjectionTable?] = [photos, summaries, imports, contacts, hangouts]
+        let tables = [people, relations, locations] + optional.compactMap { $0 }
+        var grants = Set(tables.flatMap { table in table.columns.map { "tables:read:\(table.table):\($0)" } })
+        grants.formUnion((photos?.files ?? []).map { "files:read:" + $0 })
+        if cadenceEditable, let column = people.fields["hangoutCadence"] { grants.insert("tables:patch:\(people.table):\(column)") }
+        if let log = hangoutLog { grants.insert("rows:create:\(log.policy.id):\(log.policy.revision)") }
+        return grants.sorted()
     }
 
     func graph(people peopleData: Data, relations relationData: Data, locations locationData: Data,
@@ -131,7 +133,7 @@ struct CirclePeopleBindings: Codable, Sendable {
             }
             return GraphPerson(id: id, name: name, circles: circles, baseCity: base?.city, baseCountry: base?.country,
                                residences: histories[id], photos: pictures[id],
-                               hangoutCadence: people.fields["hangoutCadence"] == nil ? nil : try string(row, "hangoutCadence"),
+                               hangoutCadence: self.people.fields["hangoutCadence"] == nil ? nil : try string(row, "hangoutCadence"),
                                revision: revision)
         }
         let edges = try active(relations.rows(relationData)).map { row in
