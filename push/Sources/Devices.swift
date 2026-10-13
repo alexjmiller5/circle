@@ -77,13 +77,19 @@ public enum DeviceRegistration {
     }
 }
 
-/// Reads `tailscale status --json` for the login of the user who owns this machine.
+/// Reads `tailscale status --json` for the login of the user who owns this machine. A tagged
+/// machine has no owning user, so its tailnet's single human user stands in; with several
+/// humans nobody is assumed (name them with --allowed-login).
 public enum TailnetOwner {
     public static func login(status: Data) -> String? {
         guard let object = try? JSONSerialization.jsonObject(with: status) as? [String: Any],
               let me = object["Self"] as? [String: Any], let id = me["UserID"] as? Int,
-              let users = object["User"] as? [String: Any], let user = users[String(id)] as? [String: Any],
-              let login = user["LoginName"] as? String, !login.isEmpty else { return nil }
+              let users = object["User"] as? [String: [String: Any]] else { return nil }
+        if (me["Tags"] as? [String])?.isEmpty == false {
+            let humans = users.values.compactMap { $0["LoginName"] as? String }.filter { $0.contains("@") }
+            return humans.count == 1 ? humans[0] : nil
+        }
+        guard let login = users[String(id)]?["LoginName"] as? String, !login.isEmpty else { return nil }
         return login
     }
 }

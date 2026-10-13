@@ -170,4 +170,9 @@ private func check(_ id: String, at: Double, city: String = "City A") -> String 
     #expect(TailnetOwner.login(status: status) == "owner@example.com")
     #expect(TailnetOwner.login(status: Data(#"{"Self":{"UserID":9},"User":{}}"#.utf8)) == nil)
     #expect(TailnetOwner.login(status: Data("not json".utf8)) == nil)
+    // A tagged machine belongs to the tailnet, not a user: its one human user owns it.
+    let tagged = Data(#"{"Self":{"UserID":5,"Tags":["tag:server"]},"User":{"5":{"ID":5,"LoginName":"mini.example.ts.net"},"42":{"ID":42,"LoginName":"owner@example.com"}}}"#.utf8)
+    #expect(TailnetOwner.login(status: tagged) == "owner@example.com")
+    let shared = Data(#"{"Self":{"UserID":5,"Tags":["tag:server"]},"User":{"5":{"ID":5,"LoginName":"mini.example.ts.net"},"42":{"ID":42,"LoginName":"owner@example.com"},"43":{"ID":43,"LoginName":"other@example.com"}}}"#.utf8)
+    #expect(TailnetOwner.login(status: shared) == nil)
 }

@@ -48,8 +48,9 @@ token, production or sandbox per device). Its state (`state.json` cursor +
 visits, `devices.json` tokens) lives in its state dir, 0600. Phones register at
 `POST /devices {token, environment}` on a loopback port exposed by
 `tailscale serve`; only the Mac's own tailnet owner (`--allow-tailnet-owner`, read
-from `tailscale status`) and `--allowed-login` users are accepted, so no login
-or email is ever written into config. Secrets
+from `tailscale status`; a tagged Mac has no owner, so its tailnet's single human
+user stands in, and several humans means nobody) and `--allowed-login` users are
+accepted, so no login or email is ever written into config. Secrets
 arrive only through `--hub-token-cmd` / `--apns-key-cmd`. The iOS app's
 Connection sheet has the alerts server field and registration; Release iOS
 builds carry `aps-environment` (needs Circle's own Ad Hoc profile with Push,
