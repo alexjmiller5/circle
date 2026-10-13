@@ -26,6 +26,15 @@ def profile():
 
 
 class SigningTests(unittest.TestCase):
+    def test_ci_run_number_becomes_the_build_number(self):
+        # Every archive is told apart by devices and install pages; locally it stays the project's own.
+        m = load()
+        self.assertEqual(m.build_number_settings({'BUILD_NUMBER': '42'}), ['CURRENT_PROJECT_VERSION=42'])
+        self.assertEqual(m.build_number_settings({}), [])
+        for bad in ('', '0', '1.2', '7; rm', '-3'):
+            with self.assertRaises(ValueError):
+                m.build_number_settings({'BUILD_NUMBER': bad})
+
     def test_ad_hoc_profile_matches_bundle_and_selected_device(self):
         m = load()
         self.assertEqual(m.validate_profile(profile(), 'com.example.App', 'synthetic-device'),

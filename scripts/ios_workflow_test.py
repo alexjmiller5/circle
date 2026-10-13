@@ -20,6 +20,8 @@ class WorkflowTests(unittest.TestCase):
         encrypt = next(s for s in steps if s.get('name') == 'Encrypt IPA')
         self.assertIn('age --encrypt', encrypt['run'])
         self.assertNotIn('${{ inputs.', encrypt['run'])
+        archive = next(s for s in steps if s.get('name') == 'Archive and verify')
+        self.assertEqual(archive['env']['BUILD_NUMBER'], '${{ github.run_number }}')
         cleanup = next(s for s in steps if s.get('name') == 'Remove plaintext IPA')
         self.assertEqual(cleanup['if'], 'always()')
         self.assertIn('unlink', cleanup['run'])

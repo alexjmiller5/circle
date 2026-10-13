@@ -39,7 +39,7 @@ final class ExplorerUITests: XCTestCase {
         #else
         XCTAssertEqual(app.staticTexts["connection-error"].label, "Enter an HTTPS service URL without a path, query, or password.")
         #endif
-        XCTAssertFalse(app.links["Approve read-only access"].exists)
+        XCTAssertFalse(app.links["Approve access"].exists)
         XCTAssertTrue(app.staticTexts["Your circle starts here"].exists)
     }
 
@@ -55,7 +55,7 @@ final class ExplorerUITests: XCTestCase {
         field.clickOrTap()
         field.typeText(endpoint)
         app.buttons["Connect to People"].clickOrTap()
-        let approval = app.links["Approve read-only access"]
+        let approval = app.links["Approve access"]
         XCTAssertTrue(approval.waitForExistence(timeout: 10))
         print("CIRCLE_APPROVAL_URL=\(approval.value as? String ?? "missing")")
         XCTAssertTrue(menu(app).waitForExistence(timeout: 270))

@@ -219,7 +219,8 @@ Cache lives under Application Support with private permissions and never
 revives current presence. Per profile: `<key>.json` graph, `<key>.places.json`
 geocode results (misses retried after 7 days, failures never cached) and
 `<key>.photos/<sha256>` bytes verified on every read. Disconnect clears it after confirmed revocation;
-401 alone is not proof an unapproved candidate cannot be approved later.
+401 alone is not proof an unapproved candidate cannot be approved later, but a
+401 for the stored, approved credential means the service already revoked it.
 
 Use `just gen`, which resolves XcodeGen's real binary so its bundled settings
 presets are found. Direct invocation through the Nix profile symlink omits them.

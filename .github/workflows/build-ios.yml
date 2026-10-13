@@ -35,6 +35,8 @@ jobs:
           IOS_PROFILE_BASE64: op://Circle/Circle Ad Hoc Profile/mobileprovision_base64
           IOS_DEVICE_ID: op://Circle/Circle ENV/IOS_DEVICE_ID
       - name: Archive and verify
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
         run: |
           : "${IOS_DEVICE_ID:?Set the selected device in the project ENV item}"
           "$(realpath "$(command -v xcodegen)")" generate --spec project.yml

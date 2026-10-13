@@ -30,12 +30,13 @@ struct CircleSession: Decodable {
 }
 
 enum CircleConnectionError: Error, LocalizedError {
-    case invalidEndpoint, invalidPolicy, rejectedSession, invalidConfiguration, invalidResponse, unavailable
+    case invalidEndpoint, invalidPolicy, rejectedSession, reconnectRequired, invalidConfiguration, invalidResponse, unavailable
     var errorDescription: String? {
         switch self {
         case .invalidEndpoint: "Enter an HTTPS service URL without a path, query, or password."
         case .invalidPolicy: "The bundled connection policy could not run."
-        case .rejectedSession: "The service did not approve the requested read-only access."
+        case .rejectedSession: "The service did not approve Circle's access."
+        case .reconnectRequired: "Circle needs your approval again: disconnect, then reconnect."
         case .invalidConfiguration: "The service has no compatible Circle configuration."
         case .invalidResponse: "The service returned an incomplete or invalid response."
         case .unavailable: "The service is unavailable. Your saved data is unchanged."
@@ -100,12 +101,13 @@ enum CircleConnectionError: Error, LocalizedError {
         ])).session
     }
 
-    func revocation(_ reply: CircleHTTPReply) throws -> Bool {
+    /// The canonical revocation outcome: "revoked" or "unauthorized"; anything else throws.
+    func revocation(_ reply: CircleHTTPReply) throws -> String {
         struct Result: Decodable { let state: String }
         let data = try JSONSerialization.jsonObject(with: reply.data)
         return try JSONDecoder().decode(Result.self, from: invoke("sessionRevocationResult", [
             ["status": reply.status, "data": data]
-        ])).state == "revoked"
+        ])).state
     }
 
     func canonicalConfig(_ data: Data) throws -> Data {

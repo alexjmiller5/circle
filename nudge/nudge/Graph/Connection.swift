@@ -127,7 +127,7 @@ struct StoredCircleConnection: Codable, Sendable {
                                      client: any CircleHTTPClient, policy: CircleEnrollmentPolicy) async throws -> StoredCircleConnection {
         let fingerprint = CircleDeviceCandidate(token: token).fingerprint
         let identity = try policy.inspectCandidate(data: reply.data, fingerprint: fingerprint)
-        guard identity.enrollmentProfile.id == CircleReaderProfile.circleID else { throw CircleConnectionError.rejectedSession }
+        guard identity.enrollmentProfile.id == CircleReaderProfile.circleID else { throw CircleConnectionError.reconnectRequired }
         let configReply = try await client.request(path: "/v1/consumer/config", method: "GET", body: nil, maxBytes: 65536)
         guard configReply.status == 200,
               let envelope = try JSONSerialization.jsonObject(with: configReply.data) as? [String: Any],
@@ -156,10 +156,12 @@ struct StoredCircleConnection: Codable, Sendable {
             let client = try client(connection.endpoint, connection.token)
             let policy = try CircleEnrollmentPolicy()
             let reply = try await client.request(path: "/v1/session", method: "GET", body: nil, maxBytes: 65536)
-            guard reply.status == 200 else { throw CircleConnectionError.rejectedSession }
+            guard reply.status == 200 else {
+                throw [401, 403].contains(reply.status) ? CircleConnectionError.reconnectRequired : CircleConnectionError.unavailable
+            }
             let validated = try await validatedConnection(endpoint: connection.endpoint, token: connection.token,
                                                            reply: reply, client: client, policy: policy)
-            guard validated.revision == connection.revision else { throw CircleConnectionError.rejectedSession }
+            guard validated.revision == connection.revision else { throw CircleConnectionError.reconnectRequired }
             try requireCurrent(id)
             let newGraph = try await CirclePeopleReader(client: client).graph(bindings: validated.bindings, selfID: graph?.selfID)
             try requireCurrent(id)
@@ -214,7 +216,7 @@ struct StoredCircleConnection: Codable, Sendable {
         busy = true
         defer { if generation == id { busy = false } }
         do {
-            let result = await revoke(try client(connection.endpoint, connection.token))
+            let result = await revoke(try client(connection.endpoint, connection.token), approved: true)
             guard generation == id else { return }
             cleanupMessage = result.message
             guard result.confirmed else { return }
@@ -225,11 +227,17 @@ struct StoredCircleConnection: Codable, Sendable {
         } catch { failure = error.localizedDescription }
     }
 
-    private func revoke(_ client: any CircleHTTPClient) async -> (confirmed: Bool, message: String) {
+    /// A pending candidate's 401 proves nothing (it may still be approved later); an approved,
+    /// stored credential the service answers 401 for is already dead and safe to forget here.
+    private func revoke(_ client: any CircleHTTPClient, approved: Bool = false) async -> (confirmed: Bool, message: String) {
         await Task { @MainActor in
             do {
                 let reply = try await client.request(path: "/v1/session", method: "POST", body: nil, maxBytes: 65536)
-                if try CircleEnrollmentPolicy().revocation(reply) { return (true, "Device credential revoked.") }
+                switch try CircleEnrollmentPolicy().revocation(reply) {
+                case "revoked": return (true, "Device credential revoked.")
+                case "unauthorized" where approved: return (true, "The service had already revoked this device.")
+                default: break
+                }
             } catch {}
             return (false, "Revocation is not confirmed. Check the service’s devices and revoke this candidate if it was approved.")
         }.value

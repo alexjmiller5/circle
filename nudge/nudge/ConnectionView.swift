@@ -24,7 +24,7 @@ struct ConnectedCircleView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let graph = model.graph, let connection = model.connection {
-                if model.failure != nil || model.cacheMessage != nil || model.graph?.selfID == nil { connectionPanel }
+                if model.failure != nil || model.cacheMessage != nil || graph.selfID == nil { connectionNotice }
                 if let reachOut, reachOut.profile == connection.preferenceKey, let avatars {
                     CircleTabs(explorer: ExplorerView(graph: graph, profile: connection.preferenceKey),
                                map: PeopleMapView(graph: graph, locator: Self.locator(connection), photos: avatars.loader, isPreview: false),
@@ -90,11 +90,33 @@ struct ConnectedCircleView: View {
                                  cache: (try? CircleGraphCache.application.photosDirectory(profile: connection.preferenceKey)).map(CirclePhotoCache.init(directory:)))
     }
 
+    /// One line above the tabs; the full panel stays in the Connection sheet.
+    private var connectionNotice: some View {
+        let problem = model.failure ?? model.cacheMessage
+        return Button { showConnection = true } label: {
+            HStack(spacing: 10) {
+                Image(systemName: problem == nil ? "person.crop.circle.badge.questionmark" : "exclamationmark.triangle")
+                Text(problem ?? "Choose yourself in Connection to anchor Back to me and Orbits.")
+                    .font(.callout).lineLimit(3).multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .foregroundStyle(model.failure == nil ? Color.primary : Color.red)
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(.bar)
+        .accessibilityIdentifier("connection-notice")
+    }
+
     private var connectionPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let connection = model.connection {
                 Text(connection.endpoint).font(.callout).textSelection(.enabled)
-                Text("Read-only People connection").foregroundStyle(.secondary)
+                Text(editor == nil ? "Read-only People connection" : "People connection: reads, plus hangout cadence and logged hangouts")
+                    .foregroundStyle(.secondary)
                 if let graph = model.graph {
                     Picker("My person record", selection: Binding(get: { graph.selfID ?? "" }, set: { value in
                         do { try model.selectSelf(value.isEmpty ? nil : value); identityError = nil }
@@ -122,10 +144,10 @@ struct ConnectedCircleView: View {
                 TextField("Service URL", text: $endpoint)
                     .textFieldStyle(.roundedBorder).accessibilityIdentifier("Service URL")
                     .disabled(model.busy)
-                Text("Circle requests names, circles, recorded relationships, residence history, profile photos and per-channel contact summaries. Approval happens in your service; Circle never asks for an operator token.")
+                Text("Circle requests names, circles, recorded relationships, residence history, profile photos, per-channel contact summaries and logged hangouts, plus permission to set a person's hangout cadence and log hangouts. Approval happens in your service; Circle never asks for an operator token.")
                     .font(.caption).foregroundStyle(.secondary)
                 if let url = model.approvalURL {
-                    Link("Approve read-only access", destination: url).accessibilityValue(url.absoluteString)
+                    Link("Approve access", destination: url).accessibilityValue(url.absoluteString)
                     if let code = model.approvalCode { Text("Approval code: \(code)").textSelection(.enabled) }
                     Text("Waiting for your approval…").font(.caption)
                     Button("Cancel connection") {

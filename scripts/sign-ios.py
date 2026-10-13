@@ -139,6 +139,16 @@ def verify_app(app, bundle, team, fingerprint, device, expected_uuid=None):
             raise ValueError('Exported leaf certificate is not the selected profile identity')
 
 
+def build_number_settings(environ):
+    """CI stamps each archive with its run number so devices and install pages tell builds apart."""
+    number = environ.get('BUILD_NUMBER')
+    if number is None:
+        return []
+    if not number.isdigit() or int(number) < 1:
+        raise ValueError('BUILD_NUMBER must be a positive integer')
+    return [f'CURRENT_PROJECT_VERSION={int(number)}']
+
+
 def build(project, scheme, output):
     p12 = base64.b64decode(os.environ['IOS_CERTIFICATE_P12_BASE64'], validate=True)
     password = os.environ['IOS_CERTIFICATE_PASSWORD']
@@ -166,7 +176,8 @@ def build(project, scheme, output):
             run(*base, '-destination', 'generic/platform=iOS', '-archivePath', archive,
                 '-derivedDataPath', root / 'DerivedData', 'CODE_SIGN_STYLE=Manual',
                 f'DEVELOPMENT_TEAM={team}', f'CODE_SIGN_IDENTITY={fingerprint}', f'IOS_PROFILE={uuid}',
-                f'OTHER_CODE_SIGN_FLAGS=--keychain {shlex.quote(str(keychain))}', 'archive', env=env)
+                f'OTHER_CODE_SIGN_FLAGS=--keychain {shlex.quote(str(keychain))}',
+                *build_number_settings(os.environ), 'archive', env=env)
             export_options = root / 'ExportOptions.plist'
             export_options.write_bytes(plistlib.dumps({
                 'method': 'release-testing', 'signingStyle': 'manual', 'teamID': team,
