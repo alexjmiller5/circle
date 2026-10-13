@@ -6,17 +6,17 @@ import Testing
     let policy = try CircleEnrollmentPolicy()
     let fingerprint = String(repeating: "a", count: 64)
     let scopes = ["tables:read:contacts:id", "tables:read:contacts:label"]
-    let profile = CircleReaderProfile(id: "circle-reader", scopes: scopes)
+    let profile = CircleReaderProfile(id: CircleReaderProfile.circleID, scopes: scopes)
     let approval = try policy.approval(fingerprint: fingerprint, profile: profile.id)
-    #expect(approval.path == "/login?key=\(fingerprint)&name=Circle&profile=circle-reader")
+    #expect(approval.path == "/login?key=\(fingerprint)&name=Circle&profile=circle-editor-v1")
     #expect(approval.policy.pollIntervalSeconds == 5)
     let data: [String: Any] = [
         "name": "device:\(fingerprint)", "scopes": scopes,
-        "enrollmentProfile": ["id": "circle-reader", "revision": String(repeating: "b", count: 64)],
+        "enrollmentProfile": ["id": CircleReaderProfile.circleID, "revision": String(repeating: "b", count: 64)],
         "capabilities": ["row_api": "v1", "schema": "none", "replica_sync": false]
     ]
     let accepted = try policy.validateSession(data: JSONSerialization.data(withJSONObject: data), fingerprint: fingerprint, profile: profile)
-    #expect(accepted.enrollmentProfile.id == "circle-reader")
+    #expect(accepted.enrollmentProfile.id == CircleReaderProfile.circleID)
     var broad = data; broad["scopes"] = scopes + ["full"]
     #expect(throws: (any Error).self) { try policy.validateSession(data: JSONSerialization.data(withJSONObject: broad), fingerprint: fingerprint, profile: profile) }
     #expect(throws: (any Error).self) { try policy.validateSession(data: JSONSerialization.data(withJSONObject: data), fingerprint: String(repeating: "c", count: 64), profile: profile) }

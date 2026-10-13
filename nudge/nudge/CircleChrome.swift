@@ -57,6 +57,8 @@ struct CircleAppActions {
 
 extension EnvironmentValues {
     @Entry var circleApp: CircleAppActions? = nil
+    /// Circle's two writes (hangout cadence, logged hangouts) when the connection grants them.
+    @Entry var circleEditor: CircleEditor? = nil
 }
 
 /// The small bottom-right menu: the tab's own options, then the app's.

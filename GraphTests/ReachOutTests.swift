@@ -126,7 +126,6 @@ private func assess(_ value: CommunicationHistory?, _ settings: ReachOutPreferen
     let store = ReachOutPreferencesStore(defaults: defaults, profile: "preview")
     var settings = ReachOutPreferences()
     settings.cadence = .quarterly
-    settings.hangoutCadence = .weekly
     settings.priority = .high
     settings.resetKinds.insert(.incomingMessage)
     try store.save(["person-1": settings])

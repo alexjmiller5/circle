@@ -43,10 +43,8 @@ enum ContactPriority: Int, CaseIterable, Codable, Sendable {
 
 struct ReachOutPreferences: Codable, Equatable, Sendable {
     var cadence: ContactCadence = .monthly
-    var hangoutCadence: ContactCadence = .monthly
     var priority: ContactPriority = .normal
     var remindersEnabled = false
-    var hangoutRemindersEnabled = false
     var snoozedUntil: Date?
     var resetKinds: Set<ContactInteractionKind> = [.outgoingMessage, .answeredCall, .hangout]
 }

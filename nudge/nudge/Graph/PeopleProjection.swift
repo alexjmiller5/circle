@@ -50,9 +50,19 @@ struct CirclePeopleBindings: Codable, Sendable {
     var contacts: CircleProjectionTable? = nil
     /// Logged hangouts; read beside contact history.
     var hangouts: CircleProjectionTable? = nil
+    /// Create-only policy for logging a hangout from Circle.
+    var hangoutLog: CircleCreationBinding? = nil
+
+    /// Cadence edits need the row revision beside the column.
+    var cadenceEditable: Bool { ["hangoutCadence", "updated", "hub"].allSatisfy { people.fields[$0] != nil } }
 
     func validate() throws {
-        try people.validate(keys: ["id", "name", "circles", "deleted"])
+        try people.validate(keys: ["id", "name", "circles", "deleted"], optional: ["hangoutCadence", "updated", "hub"])
+        guard (people.fields["updated"] == nil) == (people.fields["hub"] == nil),
+              people.fields["updated"] == nil || people.fields["hangoutCadence"] != nil else {
+            throw CircleConnectionError.invalidConfiguration
+        }
+        if let hangoutLog { try hangoutLog.validate(); guard hangouts != nil else { throw CircleConnectionError.invalidConfiguration } }
         try relations.validate(keys: ["id", "person", "related", "kind", "deleted"], optional: ["introducer"])
         try locations.validate(keys: ["id", "person", "city", "country", "start", "end", "deleted"])
         try photos?.validate(keys: ["id", "person", "platform", "key", "sha256", "fetched", "updated", "deleted"], files: true)
@@ -68,7 +78,9 @@ struct CirclePeopleBindings: Codable, Sendable {
     var scopes: [String] {
         Set(([people, relations, locations] + [photos, summaries, imports, contacts, hangouts].compactMap { $0 }).flatMap { table in
             table.columns.map { "tables:read:\(table.table):\($0)" }
-        } + (photos?.files ?? []).map { "files:read:" + $0 }).sorted()
+        } + (photos?.files ?? []).map { "files:read:" + $0 }
+          + (cadenceEditable ? ["tables:patch:\(people.table):\(people.fields["hangoutCadence"]!)"] : [])
+          + (hangoutLog.map { ["rows:create:\($0.policy.id):\($0.policy.revision)"] } ?? [])).sorted()
     }
 
     func graph(people peopleData: Data, relations relationData: Data, locations locationData: Data,
@@ -113,8 +125,14 @@ struct CirclePeopleBindings: Codable, Sendable {
             } else { throw CircleConnectionError.invalidResponse }
             // Multiple distinct current claims are ambiguity, never an arbitrary winner.
             let base = bases[id]?.count == 1 ? bases[id]?.first : nil
+            var revision: GraphRowRevision?
+            if cadenceEditable, let updated = try string(row, "updated"), let hub = try string(row, "hub") {
+                revision = GraphRowRevision(updatedAt: updated, hubAt: hub)
+            }
             return GraphPerson(id: id, name: name, circles: circles, baseCity: base?.city, baseCountry: base?.country,
-                               residences: histories[id], photos: pictures[id])
+                               residences: histories[id], photos: pictures[id],
+                               hangoutCadence: people.fields["hangoutCadence"] == nil ? nil : try string(row, "hangoutCadence"),
+                               revision: revision)
         }
         let edges = try active(relations.rows(relationData)).map { row in
             GraphRelation(personID: try string(row, "person", required: true)!,

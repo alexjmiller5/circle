@@ -4,6 +4,8 @@ import JavaScriptCore
 struct CircleReaderProfile: Codable, Sendable {
     let id: String
     let scopes: [String]
+    /// The service-owned profile Circle enrolls with: People reads, logged hangouts, cadence edits.
+    static let circleID = "circle-editor-v1"
 }
 
 struct CircleEnrollmentApproval: Decodable {

@@ -19,6 +19,7 @@ struct ConnectedCircleView: View {
     @State private var reachOut: ReachOutModel?
     /// One photo loader and thumbnail cache per connection, kept across refreshes.
     @State private var avatars: CircleAvatars?
+    @State private var editor: CircleEditor?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,6 +33,7 @@ struct ConnectedCircleView: View {
                         .id("\(model.refreshedAt?.timeIntervalSince1970 ?? 0):\(graph.selfID ?? "")")
                         .environment(reachOut)
                         .environment(avatars)
+                        .environment(\.circleEditor, editor)
                         .environment(\.circleApp, CircleAppActions(updated: model.refreshedAt, busy: model.busy,
                                                                     refresh: { Task { await model.refresh() } },
                                                                     showConnection: { showConnection = true }))
@@ -65,6 +67,10 @@ struct ConnectedCircleView: View {
         .task(id: model.connection?.preferenceKey) {
             reachOut = model.connection.map { ReachOutModel(profile: $0.preferenceKey, history: model.history) }
             avatars = model.connection.map { CircleAvatars(loader: Self.photos($0)) }
+            editor = model.connection.flatMap { connection in
+                (try? CircleHTTPTransport(endpoint: connection.endpoint, token: connection.token))
+                    .flatMap { CircleEditor(client: $0, bindings: connection.bindings) }
+            }
             reachOut?.historyFailure = model.historyFailure
         }
         .onChange(of: model.history) { _, value in reachOut?.history = value }

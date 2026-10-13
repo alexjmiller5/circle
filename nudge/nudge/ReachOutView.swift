@@ -198,12 +198,7 @@ struct ReachOutSections: View {
         } header: { Text("Reset the clock after") } footer: {
             Text("Group conversations, unanswered calls and opening a conversation never count.")
         }
-        Section {
-            cadence(settings.hangoutCadence, prefix: "hangout-cadence")
-            Toggle("Hangout reminders", isOn: settings.hangoutRemindersEnabled)
-        } header: { Text("In-person hangouts") } footer: {
-            Text("Logged hangouts reset the reach-out clock. Hangout reminders are not sent yet.")
-        }
+        HangoutSection(person: person, days: model.history?.hangoutDays(for: person.id, calendar: .current) ?? [])
         Section("Reminders") {
             Toggle("Reach-out reminders", isOn: Binding(get: { settings.wrappedValue.remindersEnabled }, set: { on in
                 Task { await model.enableReminders(on, for: person.id) }
@@ -336,5 +331,87 @@ struct ReachOutReminderScheduling: ViewModifier {
                 await model.schedule(people: people)
             }
             .onReceive(NotificationCenter.default.publisher(for: .circleReachOutChanged)) { _ in model.reload() }
+    }
+}
+
+/// In-person time: the cadence lives on the person in Soma (shared with the push service and
+/// Iris), and a logged hangout is a create-only Soma row. Reminders come from the alerts server.
+struct HangoutSection: View {
+    let person: GraphPerson
+    let days: [Date]
+    @Environment(\.circleEditor) private var editor
+    @Environment(\.circleApp) private var app
+    @State private var cadence: String?
+    @State private var revision: GraphRowRevision?
+    @State private var pendingLog: UUID?
+    @State private var busy = false
+    @State private var message: String?
+
+    var body: some View {
+        Section {
+            if let editor, editor.canEditCadence, revision != nil {
+                Picker("Hang out", selection: Binding(get: { cadence }, set: { save($0) })) {
+                    Text("No reminders").tag(String?.none)
+                    ForEach(ContactCadence.allCases, id: \.self) { Text($0.label).tag(Optional($0.rawValue)) }
+                }
+                .disabled(busy).accessibilityIdentifier("hangout-cadence")
+            } else {
+                LabeledContent("Hang out", value: label(cadence))
+            }
+            Text(lastHangout).font(.callout)
+            if editor?.canLogHangouts == true {
+                Button("Log a hangout today") { log() }.disabled(busy).accessibilityIdentifier("log-hangout")
+            }
+            if let message { Text(message).font(.caption).foregroundStyle(.secondary) }
+        } header: { Text("In-person hangouts") } footer: {
+            Text("A logged hangout resets the reach-out clock. Your alerts server reminds you when it's been longer than this and you're both in the same city.")
+        }
+        .task(id: person.revision?.hubAt) { cadence = person.hangoutCadence; revision = person.revision }
+    }
+
+    private var lastHangout: String {
+        guard let last = days.filter({ $0 <= Date() }).max() else { return "No hangout logged yet." }
+        let ago = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: last),
+                                                  to: Calendar.current.startOfDay(for: Date())).day ?? 0
+        return "Last hangout \(last.formatted(date: .abbreviated, time: .omitted)) (\(ago == 0 ? "today" : ReachOutAssessment.days(ago) + " ago"))."
+    }
+
+    private func label(_ value: String?) -> String {
+        value.flatMap(ContactCadence.init(rawValue:))?.label ?? "No reminders"
+    }
+
+    private func save(_ value: String?) {
+        guard let editor, let current = revision, value != cadence else { return }
+        let previous = cadence
+        cadence = value; busy = true; message = nil
+        Task {
+            do {
+                revision = try await editor.setHangoutCadence(value, personID: person.id, revision: current)
+                message = value == nil ? "Hangout reminders off." : "Saved."
+            } catch {
+                cadence = previous
+                message = error.localizedDescription
+            }
+            busy = false
+        }
+    }
+
+    private func log() {
+        guard let editor else { return }
+        // The same tap identity is reused until it succeeds, so a lost reply never logs twice.
+        let source = pendingLog ?? UUID()
+        pendingLog = source; busy = true; message = nil
+        let day = Date().formatted(.iso8601.year().month().day())
+        Task {
+            do {
+                _ = try await editor.logHangout(day: day, people: [person.id], sourceID: source, now: Date())
+                pendingLog = nil
+                message = "Hangout logged for today."
+                app?.refresh()
+            } catch {
+                message = error.localizedDescription
+            }
+            busy = false
+        }
     }
 }

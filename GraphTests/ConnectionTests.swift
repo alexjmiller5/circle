@@ -24,7 +24,7 @@ private actor ConnectionFixture: CircleHTTPClient {
     func request(path: String, method: String, body: Data?, maxBytes: Int) async throws -> CircleHTTPReply {
         requestedPaths.append(path)
         let revision = String(repeating: "b", count: 64)
-        let profile = ["id":"circle-reader", "revision":revision]
+        let profile = ["id":CircleReaderProfile.circleID, "revision":revision]
         var value: [String: Any]
         switch path {
         case "/v1/session":

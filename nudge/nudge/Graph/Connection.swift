@@ -81,7 +81,7 @@ struct StoredCircleConnection: Codable, Sendable {
             let endpoint = try CircleHTTPTransport.canonicalEndpoint(endpoint).absoluteString
             let candidate = try candidate(), policy = try CircleEnrollmentPolicy()
             let client = try client(endpoint, candidate.token)
-            let approval = try policy.approval(fingerprint: candidate.fingerprint, profile: "circle-reader")
+            let approval = try policy.approval(fingerprint: candidate.fingerprint, profile: CircleReaderProfile.circleID)
             let deadline = ProcessInfo.processInfo.systemUptime + Double(approval.policy.timeoutSeconds)
             pending = (id, client)
             approvalURL = URL(string: endpoint + approval.path); approvalCode = approval.approvalCode
@@ -127,7 +127,7 @@ struct StoredCircleConnection: Codable, Sendable {
                                      client: any CircleHTTPClient, policy: CircleEnrollmentPolicy) async throws -> StoredCircleConnection {
         let fingerprint = CircleDeviceCandidate(token: token).fingerprint
         let identity = try policy.inspectCandidate(data: reply.data, fingerprint: fingerprint)
-        guard identity.enrollmentProfile.id == "circle-reader" else { throw CircleConnectionError.rejectedSession }
+        guard identity.enrollmentProfile.id == CircleReaderProfile.circleID else { throw CircleConnectionError.rejectedSession }
         let configReply = try await client.request(path: "/v1/consumer/config", method: "GET", body: nil, maxBytes: 65536)
         guard configReply.status == 200,
               let envelope = try JSONSerialization.jsonObject(with: configReply.data) as? [String: Any],
@@ -137,12 +137,12 @@ struct StoredCircleConnection: Codable, Sendable {
         let canonical = try policy.canonicalConfig(JSONSerialization.data(withJSONObject: rawConfig))
         guard let config = try JSONSerialization.jsonObject(with: canonical) as? [String: Any],
               config["namespace"] as? String == "circle.reader", let fields = config["bindings"] as? [String: Any],
-              Set(fields.keys).subtracting(["photos", "summaries", "imports", "contacts", "hangouts"]) == ["people", "relations", "locations"] else {
+              Set(fields.keys).subtracting(["photos", "summaries", "imports", "contacts", "hangouts", "hangoutLog"]) == ["people", "relations", "locations"] else {
             throw CircleConnectionError.invalidConfiguration
         }
         let bindings = try JSONDecoder().decode(CirclePeopleBindings.self, from: JSONSerialization.data(withJSONObject: fields))
         try bindings.validate()
-        let profile = CircleReaderProfile(id: "circle-reader", scopes: bindings.scopes)
+        let profile = CircleReaderProfile(id: CircleReaderProfile.circleID, scopes: bindings.scopes)
         _ = try policy.validateSession(data: reply.data, fingerprint: fingerprint, profile: profile)
         return StoredCircleConnection(endpoint: endpoint, token: token, profile: profile,
                                       revision: identity.enrollmentProfile.revision, bindings: bindings)

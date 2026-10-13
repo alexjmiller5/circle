@@ -11,6 +11,15 @@ struct GraphPerson: Identifiable, Equatable, Codable, Sendable {
     // Optional so offline copies saved before these fields existed still load.
     var residences: [GraphResidence]? = nil
     var photos: [GraphPhoto]? = nil
+    /// How often Alex wants in-person time (weekly, fortnightly, monthly, quarterly); nil = no reminders.
+    var hangoutCadence: String? = nil
+    /// The row revision a cadence edit must name; nil until the hub has stamped the row.
+    var revision: GraphRowRevision? = nil
+}
+
+struct GraphRowRevision: Equatable, Codable, Sendable {
+    let updatedAt: String
+    let hubAt: String
 }
 
 /// One residence claim; null `end` means a current base.
