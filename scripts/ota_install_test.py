@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 import plistlib
 import tempfile
 import threading
@@ -100,8 +102,15 @@ class ServerTests(unittest.TestCase):
             self.assertIn(b'Nothing to install', urllib.request.urlopen(f'{url}/').read())
             ota.add(make_ipa(tmp / 'b.ipa', name='Fresh'), www, base, ota.time.time())
             self.assertIn(b'Fresh', urllib.request.urlopen(f'{url}/').read())
-            manifest = urllib.request.urlopen(f'{url}/com.example.app/manifest.plist').read()
+            log = io.StringIO()
+            with contextlib.redirect_stderr(log):
+                request = urllib.request.Request(f'{url}/com.example.app/manifest.plist?v=1',
+                                                 headers={'User-Agent': 'com.apple.appstored/1.0 iOS/26.0'})
+                manifest = urllib.request.urlopen(request).read()
             self.assertIn(b'software-package', manifest)
+            # Each request is logged with its client, so a failed phone install shows how far it got.
+            self.assertIn('GET /com.example.app/manifest.plist?v=1 200', log.getvalue())
+            self.assertIn('com.apple.appstored/1.0 iOS/26.0', log.getvalue())
         finally:
             server.shutdown()
 

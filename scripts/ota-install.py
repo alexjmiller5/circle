@@ -136,6 +136,12 @@ def make_server(www, base, port):
         def list_directory(self, path):
             self.send_error(404)
 
+        def log_request(self, code='-', size='-'):
+            # One line per request (job log): shows whether a phone's installer fetched the manifest and app.
+            agent = self.headers.get('User-Agent', '-') if self.headers else '-'
+            sys.stderr.write(f'{time.strftime("%Y-%m-%dT%H:%M:%S")} {self.command} {self.path} {code} {size} {agent}\n')
+            sys.stderr.flush()
+
         def log_message(self, *args):
             pass
 
