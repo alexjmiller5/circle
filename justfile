@@ -10,7 +10,7 @@ check: gen
 
 test:
     swift test --jobs 2 --scratch-path '{{derived}}/SwiftPM'
-    uv run --with pytest pytest tests/ scripts/sign_ios_test.py scripts/ios_workflow_test.py
+    uv run --with pytest pytest tests/ scripts/sign_ios_test.py scripts/ios_workflow_test.py scripts/ota_install_test.py
 
 test-ui: gen
     xcodebuild -project Circle.xcodeproj -scheme Circle -destination '{{destination}}' -derivedDataPath '{{derived}}' CODE_SIGN_IDENTITY=- -jobs 2 -parallel-testing-enabled NO -collect-test-diagnostics never test
@@ -18,9 +18,10 @@ test-ui: gen
 run *ARGS: check
     open -n '{{derived}}/Build/Products/Debug/Circle.app' --args {{ARGS}}
 
-# Serve a verified Ad Hoc .ipa as a tailnet install page (blocks; OTA_TTL seconds, default 900).
+# Add a verified Ad Hoc .ipa to this machine's shared tailnet install page
+# (https://<tailnet name>/install/; listed OTA_TTL_HOURS, default 48).
 ota ipa="build/Circle.ipa":
-    ./scripts/ota-install.sh "{{ipa}}"
+    ./scripts/ota-install.py "{{ipa}}"
 
 # --- project-specific ---
 calls *ARGS:

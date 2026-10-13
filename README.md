@@ -81,11 +81,13 @@ gh workflow run build-ios.yml -f artifact_recipient=<public-recipient>
 gh run watch <run-id> --exit-status
 gh run download <run-id> --dir <private-dir>
 age --decrypt -i <private-identity> -o <private-dir>/Circle.ipa <private-dir>/<artifact>/App.ipa.age
-OTA_TTL=3600 just ota <private-dir>/Circle.ipa
+just ota <private-dir>/Circle.ipa
 ```
 
-`just ota` prints an install page on this Mac's tailnet name. Open it in Safari
-on the iPhone with Tailscale connected and tap Install. The CI service account
+`just ota` adds the build to this Mac's shared install page,
+`https://<tailnet name>/install/` (one entry per app, a newer build replaces
+it, entries expire after `OTA_TTL_HOURS`, default 48), and prints that URL.
+Open it in Safari on the iPhone with Tailscale connected and tap Install. The CI service account
 and its GitHub secret come from `op-project-bootstrap .env.tpl --repo <owner>/circle`.
 
 ## Connect People

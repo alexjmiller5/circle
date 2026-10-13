@@ -104,8 +104,10 @@ shipped identity, never renamed.
 - `just run --preview-graph`: launch synthetic Mac preview.
 - `just run`: launch unconnected Mac app.
 - `just calls --help`: existing call-history CLI.
-- `just ota <ipa>`: serve a verified Ad Hoc IPA as a tailnet install page
-  (blocks for `OTA_TTL` seconds, default 900).
+- `just ota <ipa>`: add a verified Ad Hoc IPA to this Mac's shared tailnet
+  install page (`https://<tailnet name>/install/`, listed `OTA_TTL_HOURS`,
+  default 48; a newer build replaces the app's entry). `scripts/ota-install.py`
+  is the ios-app template's; keep it in sync.
 
 Secure Mac enrollment needs a matching Developer ID identity and Mac profile,
 embedded at `Contents/embedded.provisionprofile`, authorizing the app's private
