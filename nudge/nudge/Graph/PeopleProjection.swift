@@ -2,17 +2,17 @@ import Foundation
 
 /// Service-owned table and column bindings. Customers supply no schema internals.
 public struct CircleProjectionTable: Codable, Sendable {
-    let table: String
-    let fields: [String: String]
+    public let table: String
+    public let fields: [String: String]
     /// Retained-file prefixes readable for this table's keys (photos only).
     var files: [String]? = nil
-    var columns: [String] { Array(Set(fields.values)).sorted() }
+    public var columns: [String] { Array(Set(fields.values)).sorted() }
 
     public init(table: String, fields: [String: String], files: [String]? = nil) {
         self.table = table; self.fields = fields; self.files = files
     }
 
-    func validate(keys: Set<String>, optional: Set<String> = [], files expectsFiles: Bool = false) throws {
+    public func validate(keys: Set<String>, optional: Set<String> = [], files expectsFiles: Bool = false) throws {
         let valid: (String) -> Bool = { $0.range(of: "^[A-Za-z][A-Za-z0-9_]*$", options: .regularExpression) != nil }
         if expectsFiles {
             guard let files, !files.isEmpty, Set(files).count == files.count,

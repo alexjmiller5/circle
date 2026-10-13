@@ -8,6 +8,7 @@ self:
 let
   cfg = config.services.circle-push;
   label = "com.alexmiller.circle-push";
+  bindingsFile = pkgs.writeText "circle-push-bindings.json" (builtins.toJSON cfg.bindings);
   home = "/Users/${cfg.user}";
   logDir = "${home}/Library/Logs/circle-push";
 in
@@ -36,8 +37,8 @@ in
     hubTokenCommand = lib.mkOption {
       type = lib.types.str;
       description = ''
-        Command printing a hub token granted exactly the reads below: both
-        streams and the people table's id, name and deleted_at columns.
+        Command printing a hub token granted exactly: read on both streams and on
+        every column named in `bindings`.
       '';
     };
 
@@ -57,8 +58,21 @@ in
 
     checksStream = lib.mkOption { type = lib.types.str; description = "Stream of Find My city checks."; };
     locationStream = lib.mkOption { type = lib.types.str; description = "Stream whose latest append is your own location fix (lat/lon)."; };
-    peopleTable = lib.mkOption { type = lib.types.str; description = "Table holding the person ids the checks name."; };
-    peopleNameColumn = lib.mkOption { type = lib.types.str; description = "Display-name column of that table."; };
+    bindings = lib.mkOption {
+      type = lib.types.attrs;
+      example = lib.literalExpression ''
+        {
+          people = { table = "people"; fields = { id = "id"; name = "name"; deleted = "deleted_at"; hangoutCadence = "hangout_cadence"; }; };
+          locations = { table = "person_locations"; fields = { id = "id"; person = "person_id"; city = "city"; country = "country"; end = "end"; deleted = "deleted_at"; }; };
+          hangouts = { table = "hangouts"; fields = { id = "id"; date = "date"; people = "person_ids"; deleted = "deleted_at"; }; };
+        }
+      '';
+      description = ''
+        Your table and column names: `people` (id, name, deleted, optional hangoutCadence) names
+        the friends in alerts; with `locations` (current bases) and `hangouts` (logged days) and a
+        cadence column it also sends same-city hangout reminders.
+      '';
+    };
 
     allowedLogins = lib.mkOption {
       type = lib.types.listOf lib.types.str;
@@ -121,8 +135,7 @@ in
         "--topic" cfg.topic
         "--checks-stream" cfg.checksStream
         "--location-stream" cfg.locationStream
-        "--people-table" cfg.peopleTable
-        "--people-name-column" cfg.peopleNameColumn
+        "--bindings" "${bindingsFile}"
         "--listen-port" (toString cfg.listenPort)
         "--interval" (toString cfg.interval)
       ] ++ lib.concatMap (login: [ "--allowed-login" login ]) cfg.allowedLogins

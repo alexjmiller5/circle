@@ -14,10 +14,10 @@ enum ContactInteractionKind: String, Codable, CaseIterable, Sendable {
     }
 }
 
-enum ContactCadence: String, CaseIterable, Codable, Sendable {
+public enum ContactCadence: String, CaseIterable, Codable, Sendable {
     case weekly, fortnightly, monthly, quarterly
 
-    var label: String {
+    public var label: String {
         switch self {
         case .weekly: "Weekly"
         case .fortnightly: "Every two weeks"
@@ -26,7 +26,7 @@ enum ContactCadence: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    func next(after date: Date, calendar: Calendar) -> Date? {
+    public func next(after date: Date, calendar: Calendar) -> Date? {
         switch self {
         case .weekly: calendar.date(byAdding: .day, value: 7, to: date)
         case .fortnightly: calendar.date(byAdding: .day, value: 14, to: date)

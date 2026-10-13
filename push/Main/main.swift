@@ -12,7 +12,8 @@ circle-push - Circle's nearby-alert push service.
     circle-push test     push one clearly labeled test notification to every registered device
 
 Required: --hub URL --hub-token-cmd CMD --apns-key-cmd CMD --team-id ID --key-id ID --topic BUNDLE_ID
-          --checks-stream NAME --location-stream NAME --people-table TABLE --people-name-column COLUMN
+          --checks-stream NAME --location-stream NAME --bindings FILE (JSON: people {id,name,deleted[,hangoutCadence]},
+          optional locations {id,person,city,country,end,deleted} and hangouts {id,date,people,deleted} for hangout reminders)
 Optional: --state-dir DIR (default ~/Library/Application Support/circle-push) --listen-port N (default 8787)
           --allowed-login LOGIN (repeatable; tailnet users who may register a phone) --interval SECONDS (default 120)
           --hide-names (lock-screen privacy: no names or places in alerts)
@@ -153,10 +154,13 @@ let geocoder = Geocoder()
 let hub: CircleHTTPTransport
 do { hub = try CircleHTTPTransport(endpoint: option("--hub"), token: secret(option("--hub-token-cmd"))) }
 catch { FileHandle.standardError.write(Data("invalid hub URL or token\n".utf8)); exit(65) }
+let bindings: PushBindings
+do {
+    bindings = try JSONDecoder().decode(PushBindings.self, from: Data(contentsOf: URL(fileURLWithPath: option("--bindings"))))
+    try bindings.validate()
+} catch { FileHandle.standardError.write(Data("--bindings is not a valid bindings file\n".utf8)); exit(64) }
 let evaluator = NearbyEvaluator(hub: hub, checksStream: option("--checks-stream"), locationStream: option("--location-stream"),
-                                people: CircleProjectionTable(table: option("--people-table"),
-                                                              fields: ["id": "id", "name": option("--people-name-column"), "deleted": "deleted_at"]),
-                                geocode: { await geocoder.place($0, $1) })
+                                bindings: bindings, geocode: { await geocoder.place($0, $1) })
 let stateFile = stateDirectory.appendingPathComponent("state.json")
 let interval = Double(options["--interval"]?.last ?? "120") ?? 120
 
@@ -164,16 +168,20 @@ func evaluateForever() async -> Never {
     var state = (try? Data(contentsOf: stateFile)).flatMap { try? JSONDecoder().decode(PushState.self, from: $0) } ?? PushState()
     while true {
         do {
-            let alerts = try await evaluator.step(&state, now: Date())
+            let step = try await evaluator.step(&state, now: Date())
             var results: [String: Int] = [:]
-            for (alert, name) in alerts {
+            for (alert, name) in step.alerts {
                 let text = NearbyAlerts.notification(alert, name: name, settings: settings)
+                results.merge(await push(title: text.title, body: text.body), uniquingKeysWith: +)
+            }
+            for nudge in step.nudges {
+                let text = HangoutNudges.notification(nudge, hideNames: settings.hideNames, now: Date(), calendar: .current)
                 results.merge(await push(title: text.title, body: text.body), uniquingKeysWith: +)
             }
             try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try JSONEncoder().encode(state).write(to: stateFile, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateFile.path)
-            log(["alerts": alerts.count, "push": results, "devices": registry.load().count])
+            log(["alerts": step.alerts.count, "hangouts": step.nudges.count, "push": results, "devices": registry.load().count])
         } catch {
             log(["error": "\(error)"])
         }

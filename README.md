@@ -93,7 +93,7 @@ and its GitHub secret come from `op-project-bootstrap .env.tpl --repo <owner>/ci
 Enter your Soma hub's HTTPS origin and choose **Connect to People**.
 Open the approval link and verify its code and read-only grants. Circle keeps
 its generated device credential in the native Keychain. The operator configures
-`circle-reader`; customers never enter table names or an operator token.
+`circle-editor-v1`; customers never enter table names or an operator token.
 
 The service-owned `circle.reader` configuration binds the logical people,
 relations, locations and optional photos fields documented in
@@ -196,7 +196,11 @@ services.circle-push = {
   apnsKeyCommand = "/usr/bin/security find-generic-password -s circle-push -a apns-key -w";
   teamId = "ABCDE12345"; keyId = "KEY1234567";
   checksStream = "friend_city_checks"; locationStream = "location";
-  peopleTable = "people"; peopleNameColumn = "name";
+  bindings = {   # your table and column names
+    people = { table = "people"; fields = { id = "id"; name = "name"; deleted = "deleted_at"; hangoutCadence = "hangout_cadence"; }; };
+    locations = { table = "person_locations"; fields = { id = "id"; person = "person_id"; city = "city"; country = "country"; end = "end"; deleted = "deleted_at"; }; };
+    hangouts = { table = "hangouts"; fields = { id = "id"; date = "date"; people = "person_ids"; deleted = "deleted_at"; }; };
+  };
   # allowTailnetOwner = true;                # this Mac's tailnet owner may register a phone (default)
   # allowedLogins = [ "bob@example.com" ];    # anyone else on the tailnet
   tailscaleHttpsPort = 8445;                  # phones register at https://<mac>.<tailnet>.ts.net:8445
@@ -204,7 +208,11 @@ services.circle-push = {
 ```
 
 The hub token needs exactly `streams:read:<checks>`, `streams:read:<location>`
-and `tables:read:<people>:id|name|deleted_at`. The APNs key is a Circle-only
+and read on every column named in `bindings`. With the cadence, locations and
+hangouts bindings it also sends same-city hangout reminders: every 30 minutes,
+between 10:00 and 20:00, a person whose cadence has passed since the newest
+logged hangout and whose single current base is the city you are in, at most
+once per cadence period. The APNs key is a Circle-only
 .p8 key (stored as base64 or PEM). Then, in the iPhone app: Connection, enter the
 alerts server address, and tap "Send nearby alerts to this phone".
 `circle-push test ...` (same flags) sends a labeled test push.

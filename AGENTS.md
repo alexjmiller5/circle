@@ -57,6 +57,19 @@ builds carry `aps-environment` (needs Circle's own Ad Hoc profile with Push,
 never the wildcard). `nix/push-package.nix` builds it with Swift 6 from this
 flake's own nixpkgs; `nix/darwin-module.nix` is `services.circle-push`.
 `circle-push test` sends a labeled test notification to every registered phone.
+Its `--bindings` JSON names the user's tables (people with optional
+`hangoutCadence`, locations, hangouts); with all three it also sends same-city
+hangout reminders (`Hangouts.swift`: every 30 min, 10:00-20:00, cadence passed
+since the newest logged hangout, single current base equal to your city, once
+per cadence period; state `hangoutReminded` is optional so older state files load).
+
+Writes from the app (profile `circle-editor-v1`): the person's `hangoutCadence`
+through a revision-checked `tables:patch` (needs `updated`/`hub` beside it) and
+logged hangouts through the create-only `hangoutLog` policy (`Editor.swift`;
+target id = UUIDv5(namespace, ["v1", sourceKind, sourceId, 0]), one source id
+per tap so a retry settles as existing). A people table with an enforced
+invariant that reads another table makes the hub refuse every narrow patch on
+it ("insufficient scope"); creates on `hangouts` are unaffected.
 The Map tab pins each person with exactly one current base (city-level,
 geocoded on device) with their photo; one pin per city, merged with nearby
 cities while they would overlap on screen (Mercator distance at the settled
@@ -170,7 +183,7 @@ preview preferences use a separate key from connected profiles.
 ## People service boundary
 
 Circle is a dedicated read-only Soma consumer through its supported API.
-The service owns the `circle-reader` profile and `circle.reader` table/column
+The service owns the `circle-editor-v1` profile and its `circle.reader` table/column
 bindings; personal schema and values never ship in this repo. The reader
 requires exactly the grants `CirclePeopleBindings.scopes` derives: projected
 columns for people, relations, locations and the optional photos binding, the

@@ -120,8 +120,15 @@ private actor Hub: CircleHTTPClient {
         }
         if path == "/v1/streams/fixes/tail" { return CircleHTTPReply(status: 200, data: Data(location.utf8)) }
         if path == "/v1/rows/pull" {
-            return CircleHTTPReply(status: 200, data: try JSONSerialization.data(withJSONObject: [
-                "rows": [["id": "p1", "label": "Person 1", "deleted_at": NSNull()]], "next_cursor": NSNull()]))
+            let request = try JSONSerialization.jsonObject(with: body!) as! [String: Any]
+            let table = request["table"] as! String, columns = request["columns"] as! [String]
+            let all: [[String: Any]] = switch table {
+            case "contacts": [["id": "p1", "label": "Person 1", "every": "monthly", "deleted_at": NSNull()]]
+            case "bases": [["id": "b1", "who": "p1", "city": "City A, State A", "country": NSNull(), "until": NSNull(), "deleted_at": NSNull()]]
+            default: [["id": "h1", "day": "2026-08-01", "who": "[\"p1\"]", "deleted_at": NSNull()]]
+            }
+            let rows = all.map { row in row.filter { columns.contains($0.key) } }
+            return CircleHTTPReply(status: 200, data: try JSONSerialization.data(withJSONObject: ["rows": rows, "next_cursor": NSNull()]))
         }
         return CircleHTTPReply(status: 404, data: Data())
     }
@@ -140,28 +147,28 @@ private func check(_ id: String, at: Double, city: String = "City A") -> String 
     await hub.set(page: "Y3Vyc29yMQ==", entries: [], next: nil)
     await hub.set(location: #"{"_type":"location","lat":40.7,"lon":-74.0,"tst":1800000000}"#)
     let evaluator = NearbyEvaluator(hub: hub, checksStream: "checks", locationStream: "fixes",
-                                    people: CircleProjectionTable(table: "contacts", fields: ["id": "id", "name": "label", "deleted": "deleted_at"]),
+                                    bindings: PushBindings(people: CircleProjectionTable(table: "contacts", fields: ["id": "id", "name": "label", "deleted": "deleted_at"])),
                                     geocode: { lat, lon in
                                         #expect(lat == 40.7 && lon == -74.0)
                                         return CurrentPlace(city: "City A", district: nil, region: "AA", country: "Country", countryCode: "CC")
                                     })
     var state = PushState()
-    #expect(try await evaluator.step(&state, now: Date(timeIntervalSince1970: t0 + 30)).isEmpty)
+    #expect(try await evaluator.step(&state, now: Date(timeIntervalSince1970: t0 + 30)).alerts.isEmpty)
     #expect(state.cursor == "Y3Vyc29yMQ==")
     // The next run re-reads the last page, which now holds a second check six minutes later.
     await hub.set(page: "Y3Vyc29yMQ==", entries: [check("a2", at: t0 + 360)], next: nil)
-    let alerts = try await evaluator.step(&state, now: Date(timeIntervalSince1970: t0 + 390))
+    let alerts = try await evaluator.step(&state, now: Date(timeIntervalSince1970: t0 + 390)).alerts
     #expect(alerts.map(\.name) == ["Person 1"])
     #expect(alerts.first?.alert.locationText == "City A, AA")
     // Re-reading the same page never repeats the alert, and state survives a restart.
     let restored = try JSONDecoder().decode(PushState.self, from: JSONEncoder().encode(state))
     state = restored
-    #expect(try await evaluator.step(&state, now: Date(timeIntervalSince1970: t0 + 420)).isEmpty)
+    #expect(try await evaluator.step(&state, now: Date(timeIntervalSince1970: t0 + 420)).alerts.isEmpty)
     // Without a location there is no place, so nothing is claimed nearby.
     await hub.set(location: "null")
     var fresh = PushState()
     _ = try await evaluator.step(&fresh, now: Date(timeIntervalSince1970: t0 + 30))
-    #expect(try await evaluator.step(&fresh, now: Date(timeIntervalSince1970: t0 + 390)).isEmpty)
+    #expect(try await evaluator.step(&fresh, now: Date(timeIntervalSince1970: t0 + 390)).alerts.isEmpty)
 }
 
 /// The machine's own tailnet owner may register without naming them in config.
@@ -175,4 +182,28 @@ private func check(_ id: String, at: Double, city: String = "City A") -> String 
     #expect(TailnetOwner.login(status: tagged) == "owner@example.com")
     let shared = Data(#"{"Self":{"UserID":5,"Tags":["tag:server"]},"User":{"5":{"ID":5,"LoginName":"mini.example.ts.net"},"42":{"ID":42,"LoginName":"owner@example.com"},"43":{"ID":43,"LoginName":"other@example.com"}}}"#.utf8)
     #expect(TailnetOwner.login(status: shared) == nil)
+}
+
+@Test func evaluatorNudgesDueHangoutsInYourCityAtMostEveryHalfHourAndOncePerPeriod() async throws {
+    let hub = Hub()
+    await hub.set(location: #"{"lat":40.7,"lon":-74.0}"#)
+    var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "America/New_York")!
+    let bindings = PushBindings(
+        people: CircleProjectionTable(table: "contacts", fields: ["id": "id", "name": "label", "hangoutCadence": "every", "deleted": "deleted_at"]),
+        locations: CircleProjectionTable(table: "bases", fields: ["id": "id", "person": "who", "city": "city", "country": "country", "end": "until", "deleted": "deleted_at"]),
+        hangouts: CircleProjectionTable(table: "meetups", fields: ["id": "id", "date": "day", "people": "who", "deleted": "deleted_at"]))
+    try bindings.validate()
+    #expect(bindings.scopes.contains("tables:read:contacts:every") && bindings.scopes.contains("tables:read:meetups:day"))
+    let evaluator = NearbyEvaluator(hub: hub, checksStream: "checks", locationStream: "fixes", bindings: bindings,
+                                    geocode: { _, _ in CurrentPlace(city: "City A", district: nil, region: "AA", country: nil, countryCode: nil) },
+                                    calendar: calendar)
+    let noon = calendar.date(from: DateComponents(year: 2026, month: 10, day: 12, hour: 12))!
+    var state = PushState()
+    let first = try await evaluator.step(&state, now: noon)
+    #expect(first.nudges.map(\.personID) == ["p1"] && first.nudges.first?.lastDay == "2026-08-01")
+    // Within the half hour nothing is re-read; within the cadence nobody is nudged twice.
+    #expect(try await evaluator.step(&state, now: noon.addingTimeInterval(600)).nudges.isEmpty)
+    #expect(try await evaluator.step(&state, now: noon.addingTimeInterval(3_600)).nudges.isEmpty)
+    let restored = try JSONDecoder().decode(PushState.self, from: JSONEncoder().encode(state))
+    #expect(restored.hangoutReminded["p1"] == noon)
 }
