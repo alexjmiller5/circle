@@ -57,9 +57,9 @@ def read_ipa(ipa):
 def add(ipa, www, base, now):
     """Publish (or replace) the app's entry; the bundle id is the entry key."""
     entry = {**read_ipa(ipa), 'added': now, 'expires': now + TTL}
-    v = int(now)
+    # Plain URLs: iOS ignores an install link whose manifest URL has a query string.
     manifest = {'items': [{
-        'assets': [{'kind': 'software-package', 'url': f"{base}/{entry['bundle']}/app.ipa?v={v}"}],
+        'assets': [{'kind': 'software-package', 'url': f"{base}/{entry['bundle']}/app.ipa"}],
         'metadata': {'bundle-identifier': entry['bundle'], 'bundle-version': entry['version'],
                      'kind': 'software', 'title': entry['title']}}]}
     www.mkdir(parents=True, exist_ok=True)
@@ -103,7 +103,7 @@ def render_index(listed, base):
         f"<section><h2>{html.escape(e['title'])} {html.escape(e['version'])}"
         f"{' (' + html.escape(e['build']) + ')' if e.get('build') else ''}</h2>"
         f"<p><a style=\"{BUTTON}\" href=\"itms-services://?action=download-manifest&amp;"
-        f"url={base}/{e['bundle']}/manifest.plist?v={int(e['added'])}\">Install</a></p></section>"
+        f"url={base}/{e['bundle']}/manifest.plist\">Install</a></p></section>"
         for e in listed) or '<p>Nothing to install right now.</p>'
     return ('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
             '<title>Install</title><body style="font:20px -apple-system;padding:48px 24px;text-align:center">'

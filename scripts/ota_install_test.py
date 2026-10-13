@@ -44,7 +44,9 @@ class ShelfTests(unittest.TestCase):
         self.assertTrue((folder / 'app.ipa').is_file())
         manifest = plistlib.loads((folder / 'manifest.plist').read_bytes())
         item = manifest['items'][0]
-        self.assertEqual(item['assets'][0]['url'], f'{self.base}/com.example.app/app.ipa?v=1000')
+        # No query strings: iOS ignores an install link whose manifest URL carries one (the
+        # phone loads the page but never fetches the manifest), so both URLs stay plain.
+        self.assertEqual(item['assets'][0]['url'], f'{self.base}/com.example.app/app.ipa')
         self.assertEqual(item['metadata']['bundle-identifier'], 'com.example.app')
         self.assertEqual(item['metadata']['bundle-version'], '1.2')
         self.assertEqual(entry['title'], 'Example & Co')
@@ -63,7 +65,7 @@ class ShelfTests(unittest.TestCase):
         html = self.ota.render_index(self.ota.entries(self.www), self.base)
         self.assertLess(html.index('Two &lt;beta&gt;'), html.index('One'))
         self.assertEqual(html.count('itms-services://?action=download-manifest'), 2)
-        self.assertIn(f'url={self.base}/com.example.two/manifest.plist?v=2000', html)
+        self.assertIn(f'url={self.base}/com.example.two/manifest.plist">', html)
         self.assertIn('background:#0a84ff', html)
         # The build number tells two builds of one version apart on the phone.
         self.assertIn('<h2>One 1.0 (1)</h2>', html)
