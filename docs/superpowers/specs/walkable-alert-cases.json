@@ -1,0 +1,893 @@
+{
+  "status": "design vectors; not an executable or passing product test suite",
+  "policyStatus": "synthetic proposed bounds; real source cadence and routing uncertainty policy remain unapproved/unmeasured",
+  "syntheticPolicy": {
+    "sourceMaxAgeSeconds": 120,
+    "maxHorizontalAccuracyMeters": 50,
+    "routeMaxAgeSeconds": 60,
+    "walkThresholdSeconds": 900,
+    "confirmationSeconds": 300
+  },
+  "fixtureRules": [
+    "All identifiers, coordinates, times and route bounds are synthetic; no real person or route is represented.",
+    "Each event starts from the base fixture below, with observedAt/collectedAt/route completion equal to event.at, and new fix IDs based on event sequence. JSON nested overrides merge; null endpoint/route means missing. Expected notifications are literal, never computed by the evaluator.",
+    "fixPairID repeats both fix identities even if collection times change: it is a producer replay and cannot advance close dwell. friendFixID alone repeats only the friend fix while the user has a fresh changed fix; this permits reevaluation when self moves.",
+    "city is a separate existing city-check observation, default nearby with a distinct check ID for every event. The existing city watch remains the regression control. restartBefore round-trips persisted state before that event.",
+    "Route interval bounds stand for a hypothetical evidence-backed test provider, not bounds returned by MapKit or derived from coordinate distance."
+  ],
+  "baseFixture": {
+    "personID": "person-1",
+    "city": "nearby",
+    "user": {
+      "latitude": 0.0,
+      "longitude": 0.0,
+      "accuracyMeters": 10,
+      "provenance": "measured",
+      "available": true
+    },
+    "friend": {
+      "latitude": 0.001,
+      "longitude": 0.001,
+      "accuracyMeters": 10,
+      "provenance": "measured",
+      "available": true
+    },
+    "route": {
+      "mode": "walking",
+      "provider": "synthetic-controlled-route",
+      "lowerSeconds": 780,
+      "upperSeconds": 840,
+      "originFixID": "current-user-fix",
+      "destinationFixID": "current-friend-fix"
+    }
+  },
+  "cases": [
+    {
+      "name": "simultaneous-confirmation-prefers-close",
+      "breakCaught": "Sending city and close for the same confirmation",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "close"
+        }
+      ]
+    },
+    {
+      "name": "city-without-precise-friend",
+      "breakCaught": "Promoting city evidence into a precise friend fix",
+      "events": [
+        {
+          "at": 0,
+          "friend": null
+        },
+        {
+          "at": 300,
+          "friend": null
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "city-without-user-fix",
+      "breakCaught": "Treating absent self-location as current",
+      "events": [
+        {
+          "at": 0,
+          "user": null
+        },
+        {
+          "at": 300,
+          "user": null
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "city-with-route-unavailable",
+      "breakCaught": "Delaying city delivery while waiting for a route",
+      "events": [
+        {
+          "at": 0,
+          "route": null
+        },
+        {
+          "at": 300,
+          "route": null
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "city-then-meaningful-close-escalation",
+      "breakCaught": "Suppressing the later close upgrade after a city notice",
+      "events": [
+        {
+          "at": 0,
+          "route": null
+        },
+        {
+          "at": 300,
+          "route": null
+        },
+        {
+          "at": 600
+        },
+        {
+          "at": 900
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        },
+        {
+          "at": 900,
+          "tier": "close"
+        }
+      ]
+    },
+    {
+      "name": "close-does-not-need-same-city",
+      "breakCaught": "Gating physical proximity on municipal equality",
+      "events": [
+        {
+          "at": 0,
+          "city": "away"
+        },
+        {
+          "at": 300,
+          "city": "away"
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "close"
+        }
+      ]
+    },
+    {
+      "name": "old-user",
+      "breakCaught": "Not validating self source age at evaluation",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "user": {
+            "observedAt": -1
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "old-friend",
+      "breakCaught": "Not validating friend source age at evaluation",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "friend": {
+            "observedAt": -1
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "old-collected-copy",
+      "breakCaught": "Using collection time to renew the same fix",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "friend": {
+            "observedAt": -1,
+            "collectedAt": 300
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "inaccurate-friend",
+      "breakCaught": "Ignoring endpoint accuracy",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "friend": {
+            "accuracyMeters": 51
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "unknown-accuracy",
+      "breakCaught": "Accepting unknown accuracy as precise",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "friend": {
+            "accuracyMeters": null
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "address-geocode",
+      "breakCaught": "Promoting an address geocode into a measured fix",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "friend": {
+            "provenance": "geocode"
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "paused-friend",
+      "breakCaught": "Using unavailable source evidence",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "friend": {
+            "available": false
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "future-friend",
+      "breakCaught": "Accepting future source evidence",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "friend": {
+            "observedAt": 301
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "invalid-coordinate",
+      "breakCaught": "Accepting an invalid coordinate",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "friend": {
+            "latitude": 91
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "nonwalking-route",
+      "breakCaught": "Using driving time for a walking assertion",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "route": {
+            "mode": "driving"
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "route-for-old-origin",
+      "breakCaught": "Accepting a late route for a replaced self fix",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "route": {
+            "originFixID": "replaced-user-fix"
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "route-for-old-destination",
+      "breakCaught": "Accepting a late route for a replaced friend fix",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "route": {
+            "destinationFixID": "replaced-friend-fix"
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "expired-route",
+      "breakCaught": "Using an expired route response",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "route": {
+            "completedAt": 239
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "future-route",
+      "breakCaught": "Accepting a future route response",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "route": {
+            "completedAt": 301
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "negative-route-duration",
+      "breakCaught": "Accepting invalid route duration",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "route": {
+            "lowerSeconds": -1,
+            "upperSeconds": -1
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "reversed-route-interval",
+      "breakCaught": "Accepting a reversed uncertainty interval",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "route": {
+            "lowerSeconds": 840,
+            "upperSeconds": 780
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "boundary-uncertainty",
+      "breakCaught": "Treating a threshold-crossing interval as proven close",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "route": {
+            "lowerSeconds": 850,
+            "upperSeconds": 950
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "nominal-only-route",
+      "breakCaught": "Inventing confidence around a nominal estimate",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "route": {
+            "lowerSeconds": null,
+            "upperSeconds": null,
+            "nominalSeconds": 800
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "barrier-despite-small-coordinate-gap",
+      "breakCaught": "Using straight-line separation instead of actual pedestrian routing",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "route": {
+            "lowerSeconds": 1800,
+            "upperSeconds": 1860
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "inclusive-fifteen-minute-boundary",
+      "breakCaught": "Using the wrong inclusive threshold after route quality is established",
+      "events": [
+        {
+          "at": 0,
+          "route": {
+            "lowerSeconds": 870,
+            "upperSeconds": 900
+          }
+        },
+        {
+          "at": 300,
+          "route": {
+            "lowerSeconds": 870,
+            "upperSeconds": 900
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "close"
+        }
+      ]
+    },
+    {
+      "name": "duplicate-pair-cannot-confirm",
+      "breakCaught": "Treating rerouting or replay as a second source pair",
+      "events": [
+        {
+          "at": 0,
+          "fixPairID": "pair-a"
+        },
+        {
+          "at": 300,
+          "fixPairID": "pair-a"
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        }
+      ]
+    },
+    {
+      "name": "dwell-cannot-be-shortened",
+      "breakCaught": "Removing the proven five-minute confirmation dwell",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 299
+        }
+      ],
+      "expectedNotifications": []
+    },
+    {
+      "name": "unknown-clears-pending-dwell",
+      "breakCaught": "Carrying a pending close candidate across unknown evidence",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300,
+          "route": null
+        },
+        {
+          "at": 600
+        },
+        {
+          "at": 900
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "city"
+        },
+        {
+          "at": 900,
+          "tier": "close"
+        }
+      ]
+    },
+    {
+      "name": "boundary-jitter-does-not-repeat",
+      "breakCaught": "Treating uncertain boundary jitter as confirmed departure",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300
+        },
+        {
+          "at": 600,
+          "route": {
+            "lowerSeconds": 895,
+            "upperSeconds": 905
+          }
+        },
+        {
+          "at": 900
+        },
+        {
+          "at": 1200
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "close"
+        }
+      ]
+    },
+    {
+      "name": "downgrade-does-not-repeat-city",
+      "breakCaught": "Sending a redundant city alert on close departure",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300
+        },
+        {
+          "at": 600,
+          "route": {
+            "lowerSeconds": 1100,
+            "upperSeconds": 1150
+          }
+        },
+        {
+          "at": 900,
+          "route": {
+            "lowerSeconds": 1100,
+            "upperSeconds": 1150
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "close"
+        }
+      ]
+    },
+    {
+      "name": "confirmed-close-reentry-in-same-city",
+      "breakCaught": "Blocking a later true close visit inside one city visit",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300
+        },
+        {
+          "at": 600,
+          "route": {
+            "lowerSeconds": 1100,
+            "upperSeconds": 1150
+          }
+        },
+        {
+          "at": 900,
+          "route": {
+            "lowerSeconds": 1100,
+            "upperSeconds": 1150
+          }
+        },
+        {
+          "at": 1200
+        },
+        {
+          "at": 1500
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "close"
+        },
+        {
+          "at": 1500,
+          "tier": "close"
+        }
+      ]
+    },
+    {
+      "name": "restart-does-not-repeat-confirmed-close",
+      "breakCaught": "Dropping the persisted close delivery ledger on restart",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300
+        },
+        {
+          "at": 600,
+          "restartBefore": true
+        },
+        {
+          "at": 900
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "close"
+        }
+      ]
+    },
+    {
+      "name": "self-movement-reevaluates-still-fresh-friend",
+      "breakCaught": "Reevaluating only when the friend stream changes",
+      "events": [
+        {
+          "at": 0,
+          "friendFixID": "friend-0"
+        },
+        {
+          "at": 300,
+          "friendFixID": "friend-300"
+        },
+        {
+          "at": 330,
+          "friendFixID": "friend-300",
+          "friend": {
+            "observedAt": 300,
+            "collectedAt": 300
+          },
+          "route": {
+            "lowerSeconds": 1100,
+            "upperSeconds": 1150
+          }
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "close"
+        }
+      ],
+      "expectedRouteReevaluationAt": [
+        0,
+        300,
+        330
+      ]
+    },
+    {
+      "name": "out-of-order-replay-cannot-rewind",
+      "breakCaught": "Rewinding confirmed state after older source evidence",
+      "events": [
+        {
+          "at": 0
+        },
+        {
+          "at": 300
+        },
+        {
+          "at": 600,
+          "friend": {
+            "observedAt": 100
+          },
+          "route": null
+        },
+        {
+          "at": 900
+        }
+      ],
+      "expectedNotifications": [
+        {
+          "at": 300,
+          "tier": "close"
+        }
+      ]
+    }
+  ],
+  "deliveryAndPrivacyCases": [
+    {
+      "name": "hide-names",
+      "expected": "No person name, coordinates, place or route detail in title/body; invitation remains truthful."
+    },
+    {
+      "name": "unrestricted-existing-audience",
+      "expected": "Graph/circle filters do not remove an otherwise eligible person; existing registration audience unchanged."
+    },
+    {
+      "name": "old-state-decodes",
+      "expected": "Old PushState without close fields decodes; existing city ledger remains; no synthetic close replay."
+    },
+    {
+      "name": "partial-device-failure",
+      "expected": "Persist pending logical event before sends; retry only failed/unacknowledged recipient, not successful devices."
+    },
+    {
+      "name": "restart-between-send-and-save",
+      "expected": "Stable pending event/collapse identity retained; document at-least-once crash window, never claim exactly once."
+    },
+    {
+      "name": "retry-after-evidence-expiry",
+      "expected": "Discard expired close notification, do not send a stale walk invitation."
+    },
+    {
+      "name": "cancellation-after-endpoint-change",
+      "expected": "Discard old asynchronous route; no acceptance based on replaced coordinate versions."
+    }
+  ]
+}
