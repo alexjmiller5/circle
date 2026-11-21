@@ -12,6 +12,12 @@ import Testing
 private actor ConnectionFixture: CircleHTTPClient {
     let fingerprint: String
     let bindings: CirclePeopleBindings
+    var registryContract = false
+    var registryLaterPageFails = false
+    var registryAuthFault: String?
+    var registryBodies: [Data] = []
+    func useRegistryContract(authFault: String? = nil) { registryContract = true; registryAuthFault = authFault }
+    func failRegistryLaterPage() { registryLaterPageFails = true }
     var failRows = false
     var failHistory = false
     func failHistoryReads() { failHistory = true }
@@ -42,13 +48,37 @@ private actor ConnectionFixture: CircleHTTPClient {
                 value = ["logged_out":true]
             }
             else if sessionStatus != 200 { return CircleHTTPReply(status: sessionStatus, data: Data("{}".utf8)) }
-            else { value = ["name":"device:\(fingerprint)", "scopes":bindings.scopes, "enrollmentProfile":profile,
+            else { value = ["name":"device:\(fingerprint)", "scopes":registryAuthFault == "missingGrant" ? bindings.scopes.filter { $0 != "tables:read:circles:source_label" }
+                            : registryAuthFault == "extraGrant" ? bindings.scopes + ["tables:read:unrelated:id"] : bindings.scopes,
+                           "enrollmentProfile":profile,
                            "capabilities":["row_api":"v1", "schema":"none", "replica_sync":false]] }
         case "/v1/consumer/config":
-            value = ["profile":profile, "config":["version":1,"namespace":"circle.reader","bindings":try JSONSerialization.jsonObject(with: JSONEncoder().encode(bindings))]]
+            value = ["profile":registryAuthFault == "wrongRevision" ? ["id":profileID,"revision":String(repeating:"c",count:64)] : profile, "config":["version":1,"namespace":"circle.reader","bindings":try JSONSerialization.jsonObject(with: JSONEncoder().encode(bindings))]]
         case "/v1/rows/pull":
             if failRows { throw CircleConnectionError.unavailable }
             let table = try JSONSerialization.jsonObject(with: body!) as! [String:Any]
+            if registryContract {
+                registryBodies.append(body!)
+                if table["table"] as? String == "circles" {
+                    let columns = Set(table["columns"] as? [String] ?? [])
+                    let allowed = Set(["id","source_label","name","kind","period_label","starts_on","ends_on","parent_id","linked_person_id","deleted_at"])
+                    guard columns == allowed, table["limit"] as? Int == 200 else { throw CircleConnectionError.invalidResponse }
+                    if let after = table["after"] as? String {
+                        guard after == "g2" else { throw CircleConnectionError.invalidResponse }
+                        if registryLaterPageFails { return CircleHTTPReply(status:503,data:Data("{}".utf8)) }
+                        value = ["rows":[registryDefinition("g3",label:"Dated",start:"2026-01-01",end:"2026-01-02")],"next_cursor":NSNull()]
+                    } else {
+                        value = ["rows":[registryDefinition("g1",label:"caf\u{00e9}"),
+                            registryDefinition("g2",label:"cafe\u{0301}",parent:"g1",person:"p1",period:"Confirmed era")],"next_cursor":"g2"]
+                    }
+                    return CircleHTTPReply(status:200,data:try JSONSerialization.data(withJSONObject:value))
+                }
+                if table["table"] as? String == "contacts" {
+                    value = ["rows":[["id":"p1","label":registryLaterPageFails ? "Person 1 refreshed" : "Person 1",
+                        "groups":String(decoding:try JSONEncoder().encode(["caf\u{00e9}","cafe\u{0301}","caf\u{00e9}","Unmapped","Dated"]),as:UTF8.self),"deleted_at":NSNull()]],"next_cursor":NSNull()]
+                    return CircleHTTPReply(status:200,data:try JSONSerialization.data(withJSONObject:value))
+                }
+            }
             if failHistory && table["table"] as? String == "talk_summary" { return CircleHTTPReply(status: 503, data: Data("{}".utf8)) }
             value = ["rows":table["table"] as? String == "talk_summary" ? [[
                 "id":"p1:sms", "who":"p1", "via":"sms", "sent_at":"2026-09-01T10:00:00.000Z", "got_at":NSNull(), "answered_at":NSNull(),
@@ -248,4 +278,83 @@ private actor PausedSession: CircleHTTPClient {
     #expect(model.graph?.people.count == 1)
     #expect(model.graph?.circleMetadata?.unavailable == false)
     #expect(store.value?.profile.scopes == bindings.scopes)
+}
+
+private func registryDefinition(_ id: String, label: String, parent: Any = NSNull(), person: Any = NSNull(),
+                                period: Any = NSNull(), start: Any = NSNull(), end: Any = NSNull()) -> [String:Any] {
+    ["id":id,"source_label":label,"name":label,"kind":NSNull(),"period_label":period,"starts_on":start,
+     "ends_on":end,"parent_id":parent,"linked_person_id":person,"deleted_at":NSNull()]
+}
+private func rolloutContractBindings() -> CirclePeopleBindings {
+    var value = CirclePeopleBindings(
+        people:.init(table:"contacts",fields:["id":"id","name":"label","circles":"groups","deleted":"deleted_at"]),
+        relations:.init(table:"links",fields:["id":"id","person":"subject","related":"object","kind":"kind","deleted":"deleted_at"]),
+        locations:.init(table:"bases",fields:["id":"id","person":"person","city":"city","country":"country","start":"start","end":"end","deleted":"deleted_at"]))
+    value.circleDefinitions = .init(table:"circles",fields:["id":"id","sourceLabel":"source_label","name":"name","kind":"kind",
+        "periodLabel":"period_label","start":"starts_on","end":"ends_on","parent":"parent_id","person":"linked_person_id","deleted":"deleted_at"])
+    return value
+}
+
+@Test @MainActor func exactRegistryRolloutMappingConnectsReadsCachesAndSurvivesLaterPageFailure() async throws {
+    let bindings = rolloutContractBindings(), candidate = CircleDeviceCandidate(token:"fictional-registry-contract")
+    let fixture = ConnectionFixture(fingerprint:candidate.fingerprint,bindings:bindings)
+    await fixture.useRegistryContract()
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at:directory) }
+    let cache = CircleGraphCache(directory:directory), store = MemoryCredentialStore()
+    let model = CircleConnectionModel(store:store,cache:cache,candidate:{ candidate },client:{ _,_ in fixture })
+    await model.connect(endpoint:"https://example.invalid")
+    #expect(model.failure == nil)
+    let graph = try #require(model.graph), metadata = try #require(graph.circleMetadata)
+    #expect(metadata.unavailable == false && metadata.definitions.count == 3)
+    let first = try #require(graph.circleDefinition(for:"caf\u{00e9}"))
+    #expect(first.kind == nil && first.periodLabel == nil && first.start == nil && first.end == nil && first.parent == nil && first.person == nil)
+    let second = try #require(graph.circleDefinition(for:"cafe\u{0301}"))
+    #expect(second.parent == "g1" && second.person == "p1" && second.periodLabel == "Confirmed era")
+    #expect(second.start == nil && second.end == nil)
+    #expect(graph.circleDefinition(for:"Dated")?.start == "2026-01-01")
+    #expect(graph.circleDefinition(for:"Dated")?.end == "2026-01-02")
+    #expect(graph.circleDefinition(for:"Unmapped") == nil)
+    let groups = graph.groups(by:.circles,location:.base)
+    #expect(Set(groups.map(\.id)) == ["circle:id:g1","circle:id:g2","circle:id:g3","circle:value:Unmapped"])
+    #expect(groups.allSatisfy { $0.members == ["p1"] })
+    #expect(graph.people[0].circles.count == 5)
+    let delta = Set(bindings.scopes.filter { $0.hasPrefix("tables:read:circles:") })
+    #expect(delta == Set(["id","source_label","name","kind","period_label","starts_on","ends_on","parent_id","linked_person_id","deleted_at"].map { "tables:read:circles:" + $0 }))
+    #expect(store.value?.profile.scopes == bindings.scopes)
+    let profile = try #require(store.value?.preferenceKey)
+    #expect(try cache.load(profile:profile)?.graph.circleMetadata == metadata)
+    await fixture.failRegistryLaterPage()
+    let restored = CircleConnectionModel(store:store,cache:cache,client:{ _,_ in fixture })
+    await restored.restore()
+    #expect(restored.failure == nil)
+    #expect(restored.graph?.people[0].name == "Person 1 refreshed")
+    #expect(restored.graph?.circleMetadata?.definitions == metadata.definitions)
+    #expect(restored.graph?.circleMetadata?.unavailable == true)
+    #expect(restored.graph?.people[0].circles.map { Data($0.utf8) } == graph.people[0].circles.map { Data($0.utf8) })
+    #expect(try cache.load(profile:profile)?.graph.circleMetadata?.unavailable == true)
+    let bodies = await fixture.registryBodies
+    let requests = try bodies.map { try JSONSerialization.jsonObject(with:$0) as! [String:Any] }
+    let definitions = requests.filter { $0["table"] as? String == "circles" }
+    #expect(definitions.count == 4)
+    #expect(definitions.compactMap { $0["after"] as? String } == ["g2","g2"])
+    for request in requests {
+        #expect(Set(request.keys).isSubset(of:["table","columns","limit","after"]))
+        #expect(["contacts","links","bases","circles"].contains(request["table"] as? String ?? ""))
+    }
+    #expect(Set(await fixture.requestedPaths) == ["/v1/session","/v1/consumer/config","/v1/rows/pull"])
+}
+
+@Test @MainActor func exactRegistryContractRejectsMissingExtraGrantsAndWrongConfigRevisionBeforeRows() async throws {
+    for fault in ["missingGrant","extraGrant","wrongRevision"] {
+        let candidate = CircleDeviceCandidate(token:"fictional-registry-negative-" + fault)
+        let fixture = ConnectionFixture(fingerprint:candidate.fingerprint,bindings:rolloutContractBindings())
+        await fixture.useRegistryContract(authFault:fault)
+        let store = MemoryCredentialStore()
+        let model = CircleConnectionModel(store:store,candidate:{ candidate },client:{ _,_ in fixture })
+        await model.connect(endpoint:"https://example.invalid")
+        #expect(store.value == nil && model.graph == nil)
+        #expect(model.failure != nil)
+        #expect(await fixture.registryBodies.isEmpty)
+    }
 }
