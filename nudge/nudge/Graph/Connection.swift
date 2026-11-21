@@ -137,7 +137,7 @@ struct StoredCircleConnection: Codable, Sendable {
         let canonical = try policy.canonicalConfig(JSONSerialization.data(withJSONObject: rawConfig))
         guard let config = try JSONSerialization.jsonObject(with: canonical) as? [String: Any],
               config["namespace"] as? String == "circle.reader", let fields = config["bindings"] as? [String: Any],
-              Set(fields.keys).subtracting(["photos", "summaries", "imports", "contacts", "hangouts", "hangoutLog"]) == ["people", "relations", "locations"] else {
+              Set(fields.keys).subtracting(["photos", "summaries", "imports", "contacts", "hangouts", "hangoutLog", "circleDefinitions"]) == ["people", "relations", "locations"] else {
             throw CircleConnectionError.invalidConfiguration
         }
         let bindings = try JSONDecoder().decode(CirclePeopleBindings.self, from: JSONSerialization.data(withJSONObject: fields))
@@ -163,7 +163,7 @@ struct StoredCircleConnection: Codable, Sendable {
                                                            reply: reply, client: client, policy: policy)
             guard validated.revision == connection.revision else { throw CircleConnectionError.reconnectRequired }
             try requireCurrent(id)
-            let newGraph = try await CirclePeopleReader(client: client).graph(bindings: validated.bindings, selfID: graph?.selfID)
+            let newGraph = try await CirclePeopleReader(client: client).graph(bindings: validated.bindings, selfID: graph?.selfID, previousMetadata: graph?.circleMetadata)
             try requireCurrent(id)
             // History is read after People and published on its own: a failed read keeps the last history.
             var newHistory = history
@@ -194,7 +194,7 @@ struct StoredCircleConnection: Codable, Sendable {
     func selectSelf(_ personID: String?) throws {
         guard let graph, let connection, let refreshedAt,
               personID == nil || graph.byID[personID!] != nil else { throw CircleConnectionError.invalidConfiguration }
-        let selected = SocialGraph(people: graph.people, relations: graph.relations, selfID: personID)
+        let selected = SocialGraph(people: graph.people, relations: graph.relations, selfID: personID, circleMetadata: graph.circleMetadata)
         try cache?.save(selected, history: history, refreshedAt: refreshedAt, profile: connection.preferenceKey)
         self.graph = selected
     }

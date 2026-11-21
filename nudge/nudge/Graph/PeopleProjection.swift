@@ -53,6 +53,8 @@ struct CirclePeopleBindings: Codable, Sendable {
     /// Create-only policy for logging a hangout from Circle.
     var hangoutLog: CircleCreationBinding? = nil
 
+    var circleDefinitions: CircleProjectionTable? = nil
+
     /// Cadence edits need the row revision beside the column.
     var cadenceEditable: Bool { ["hangoutCadence", "updated", "hub"].allSatisfy { people.fields[$0] != nil } }
 
@@ -65,6 +67,7 @@ struct CirclePeopleBindings: Codable, Sendable {
         if let hangoutLog { try hangoutLog.validate(); guard hangouts != nil else { throw CircleConnectionError.invalidConfiguration } }
         try relations.validate(keys: ["id", "person", "related", "kind", "deleted"], optional: ["introducer"])
         try locations.validate(keys: ["id", "person", "city", "country", "start", "end", "deleted"])
+        try circleDefinitions?.validate(keys: CircleDefinition.keys)
         try photos?.validate(keys: ["id", "person", "platform", "key", "sha256", "fetched", "updated", "deleted"], files: true)
         try summaries?.validate(keys: CommunicationHistoryReader.summaryKeys)
         try imports?.validate(keys: CommunicationHistoryReader.importKeys)
@@ -76,7 +79,7 @@ struct CirclePeopleBindings: Codable, Sendable {
     }
 
     var scopes: [String] {
-        let optional: [CircleProjectionTable?] = [photos, summaries, imports, contacts, hangouts]
+        let optional: [CircleProjectionTable?] = [photos, summaries, imports, contacts, hangouts, circleDefinitions]
         let tables = [people, relations, locations] + optional.compactMap { $0 }
         var grants = Set(tables.flatMap { table in table.columns.map { "tables:read:\(table.table):\($0)" } })
         grants.formUnion((photos?.files ?? []).map { "files:read:" + $0 })

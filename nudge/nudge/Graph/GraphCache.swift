@@ -12,7 +12,8 @@ struct CircleGraphCache: Sendable {
         let refreshedAt: Date
         /// Optional so offline copies saved before contact history existed still load.
         var history: CommunicationHistory? = nil
-        var graph: SocialGraph { SocialGraph(people: people, relations: relations, selfID: selfID) }
+        var circleMetadata: CircleMetadata? = nil
+        var graph: SocialGraph { SocialGraph(people: people, relations: relations, selfID: selfID, circleMetadata: circleMetadata) }
     }
 
     private func file(_ profile: String) throws -> URL {
@@ -40,6 +41,10 @@ struct CircleGraphCache: Sendable {
             throw CircleConnectionError.invalidResponse
         }
         var snapshot = try JSONDecoder().decode(Snapshot.self, from: Data(contentsOf: path))
+        if let metadata = snapshot.circleMetadata {
+            do { try CircleMetadata.validate(metadata.definitions, people: Set(snapshot.people.map(\.id))) }
+            catch { snapshot.circleMetadata = CircleMetadata(definitions: [], unavailable: true) }
+        }
         // Presence requires new source/freshness evaluation, never cache age alone.
         for index in snapshot.people.indices { snapshot.people[index].currentCity = nil }
         return snapshot
@@ -49,7 +54,7 @@ struct CircleGraphCache: Sendable {
         let path = try file(profile)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
-        let snapshot = Snapshot(people: graph.people, relations: graph.relations, selfID: graph.selfID, refreshedAt: refreshedAt, history: history)
+        let snapshot = Snapshot(people: graph.people, relations: graph.relations, selfID: graph.selfID, refreshedAt: refreshedAt, history: history, circleMetadata: graph.circleMetadata)
         try JSONEncoder().encode(snapshot).write(to: path, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
     }

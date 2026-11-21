@@ -172,6 +172,16 @@ constellation shelf-packs each group as a disk sized by its own members. A
 gesture offsets or scales the already rendered graph layer (twice the
 viewport) and commits to the camera in steps; graph nodes are tap gestures,
 not Buttons, so a swipe never selects.
+An optional service-bound `circleDefinitions` registry adds stable metadata IDs,
+reviewed names/kinds, period wording and exact dates, parent and linked-person
+references. Exact `sourceLabel` is the legacy compatibility key; `people.circles`
+remains the membership authority. Unknown/unmapped labels keep their original
+wording and legacy group IDs. Registry reads use the bounded projected reader;
+duplicate labels, dangling references, cycles and invalid dates invalidate the
+metadata, never the People graph. Failed optional refreshes retain valid previous
+metadata marked unavailable; cached metadata is validated before use. No timeline
+UI or automatic semantic classification follows from this binding.
+
 Circles are met-where labels and are never plotted as residence; they carry
 no place flag, so the map does not geocode circle names. Hometown stays
 Unknown unless a granted column carries it. There is no preferred-photo flag:

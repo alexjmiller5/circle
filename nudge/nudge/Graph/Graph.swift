@@ -82,9 +82,14 @@ struct SocialGraph: Sendable {
     let relations: [GraphRelation]
     let edges: [GraphEdge]
     let selfID: String?
+    var circleMetadata: CircleMetadata?
+    func circleDefinition(for sourceLabel: String) -> CircleDefinition? {
+        circleMetadata?.definitions.first { $0.sourceLabel == sourceLabel }
+    }
     private let adjacency: [String: Set<String>]
 
-    init(people: [GraphPerson], relations: [GraphRelation], selfID: String?) {
+    init(people: [GraphPerson], relations: [GraphRelation], selfID: String?, circleMetadata: CircleMetadata? = nil) {
+        self.circleMetadata = circleMetadata
         var unique: [String: GraphPerson] = [:]
         for person in people where unique[person.id] == nil { unique[person.id] = person }
         self.people = unique.values.sorted { $0.id < $1.id }
@@ -153,6 +158,9 @@ struct SocialGraph: Sendable {
             }
             return result
         }
+        let circleIDs = (circleMetadata?.definitions ?? []).reduce(into: [String: String]()) { result, definition in
+            result[definition.sourceLabel] = definition.id
+        }
         var members: [String: [String]] = [:], labels: [String: String] = [:]
         for person in people {
             let entries: [(String, String)]
@@ -172,7 +180,9 @@ struct SocialGraph: Sendable {
             } else if person.circles.isEmpty {
                 entries = [("circle:unassigned", "Unassigned")]
             } else {
-                entries = Set(person.circles).sorted().map { ("circle:value:" + $0, $0) }
+                entries = Set(person.circles).sorted().map { label in
+                    (circleIDs[label].map { "circle:id:" + $0 } ?? "circle:value:" + label, label)
+                }
             }
             for (id, label) in entries {
                 members[id, default: []].append(person.id)

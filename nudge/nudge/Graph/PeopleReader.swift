@@ -54,13 +54,26 @@ public struct CirclePeopleReader: Sendable {
         return try JSONSerialization.data(withJSONObject: allRows, options: [.sortedKeys])
     }
 
-    func graph(bindings: CirclePeopleBindings, selfID: String?) async throws -> SocialGraph {
+    func graph(bindings: CirclePeopleBindings, selfID: String?, previousMetadata: CircleMetadata? = nil) async throws -> SocialGraph {
         try bindings.validate()
         let people = try await read(bindings.people)
         let relations = try await read(bindings.relations)
         let locations = try await read(bindings.locations)
         var photos: Data?
         if let table = bindings.photos { photos = try await read(table) }
-        return try bindings.graph(people: people, relations: relations, locations: locations, photos: photos, selfID: selfID)
+        var graph = try bindings.graph(people: people, relations: relations, locations: locations, photos: photos, selfID: selfID)
+        if let table = bindings.circleDefinitions {
+            do {
+                let data = try await read(table)
+                graph.circleMetadata = try CircleMetadata.read(data, table: table, people: Set(graph.byID.keys))
+            } catch is CancellationError { throw CancellationError() }
+            catch {
+                var retained = previousMetadata?.definitions ?? []
+                do { try CircleMetadata.validate(retained, people: Set(graph.byID.keys)) }
+                catch { retained = [] }
+                graph.circleMetadata = CircleMetadata(definitions: retained, unavailable: true)
+            }
+        }
+        return graph
     }
 }

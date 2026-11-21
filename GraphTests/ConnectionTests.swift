@@ -229,3 +229,23 @@ private actor PausedSession: CircleHTTPClient {
     #expect(model.history == first)
     #expect(model.historyFailure != nil)
 }
+
+@Test @MainActor func optionalRegistryProfileConnectsThroughExactNativeBindingValidation() async throws {
+    let legacy = CirclePeopleBindings(
+        people:.init(table:"contacts",fields:["id":"id","name":"label","circles":"groups","deleted":"deleted_at"]),
+        relations:.init(table:"links",fields:["id":"id","person":"subject","related":"object","kind":"kind","deleted":"deleted_at"]),
+        locations:.init(table:"bases",fields:["id":"id","person":"person","city":"city","country":"country","start":"start","end":"end","deleted":"deleted_at"]))
+    var config = try JSONSerialization.jsonObject(with:JSONEncoder().encode(legacy)) as! [String:Any]
+    config["circleDefinitions"] = ["table":"definitions","fields":Dictionary(uniqueKeysWithValues:
+        ["id","sourceLabel","name","kind","periodLabel","start","end","parent","person","deleted"].map { ($0,$0) })]
+    let bindings = try JSONDecoder().decode(CirclePeopleBindings.self,from:JSONSerialization.data(withJSONObject:config))
+    let candidate = CircleDeviceCandidate(token:"fixture-optional-registry")
+    let fixture = ConnectionFixture(fingerprint:candidate.fingerprint,bindings:bindings)
+    let store = MemoryCredentialStore()
+    let model = CircleConnectionModel(store:store,candidate:{ candidate },client:{ _,_ in fixture })
+    await model.connect(endpoint:"https://example.invalid")
+    #expect(model.failure == nil)
+    #expect(model.graph?.people.count == 1)
+    #expect(model.graph?.circleMetadata?.unavailable == false)
+    #expect(store.value?.profile.scopes == bindings.scopes)
+}
