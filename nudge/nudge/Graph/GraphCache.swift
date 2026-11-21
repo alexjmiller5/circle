@@ -13,6 +13,25 @@ struct CircleGraphCache: Sendable {
         /// Optional so offline copies saved before contact history existed still load.
         var history: CommunicationHistory? = nil
         var circleMetadata: CircleMetadata? = nil
+        enum CodingKeys: String, CodingKey { case people, relations, selfID, refreshedAt, history, circleMetadata }
+
+        init(people: [GraphPerson], relations: [GraphRelation], selfID: String?, refreshedAt: Date,
+             history: CommunicationHistory? = nil, circleMetadata: CircleMetadata? = nil) {
+            self.people = people; self.relations = relations; self.selfID = selfID
+            self.refreshedAt = refreshedAt; self.history = history; self.circleMetadata = circleMetadata
+        }
+
+        init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            people = try values.decode([GraphPerson].self, forKey: .people)
+            relations = try values.decode([GraphRelation].self, forKey: .relations)
+            selfID = try values.decodeIfPresent(String.self, forKey: .selfID)
+            refreshedAt = try values.decode(Date.self, forKey: .refreshedAt)
+            history = try values.decodeIfPresent(CommunicationHistory.self, forKey: .history)
+            do { circleMetadata = try values.decodeIfPresent(CircleMetadata.self, forKey: .circleMetadata) }
+            catch is DecodingError { circleMetadata = CircleMetadata(definitions: [], unavailable: true) }
+        }
+
         var graph: SocialGraph { SocialGraph(people: people, relations: relations, selfID: selfID, circleMetadata: circleMetadata) }
     }
 
@@ -42,7 +61,7 @@ struct CircleGraphCache: Sendable {
         }
         var snapshot = try JSONDecoder().decode(Snapshot.self, from: Data(contentsOf: path))
         if let metadata = snapshot.circleMetadata {
-            do { try CircleMetadata.validate(metadata.definitions, people: Set(snapshot.people.map(\.id))) }
+            do { try CircleMetadata.validate(metadata.definitions, people: snapshot.people.map(\.id)) }
             catch { snapshot.circleMetadata = CircleMetadata(definitions: [], unavailable: true) }
         }
         // Presence requires new source/freshness evaluation, never cache age alone.

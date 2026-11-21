@@ -25,14 +25,14 @@ public struct CircleProjectionTable: Codable, Sendable {
               columns.count == fields.count else { throw CircleConnectionError.invalidConfiguration }
     }
 
-    public func rows(_ data: Data) throws -> [[String: Any]] {
+    public func rows(_ data: Data, exactIDs: Bool = false) throws -> [[String: Any]] {
         guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             throw CircleConnectionError.invalidResponse
         }
-        var ids = Set<String>()
+        var ids = Set<String>(), exact = Set<Data>()
         return try rows.map { row in
             guard Set(row.keys) == Set(columns), let id = row["id"] as? String, !id.isEmpty,
-                  ids.insert(id).inserted else { throw CircleConnectionError.invalidResponse }
+                  (exactIDs ? exact.insert(Data(id.utf8)).inserted : ids.insert(id).inserted) else { throw CircleConnectionError.invalidResponse }
             return Dictionary(uniqueKeysWithValues: fields.map { ($0.key, row[$0.value]!) })
         }
     }

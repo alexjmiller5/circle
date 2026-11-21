@@ -15,12 +15,13 @@ public struct CirclePeopleReader: Sendable {
 
     /// Complete bounded scan, not a cross-page or cross-table snapshot.
     /// Nothing is published until every page has passed validation.
-    public func read(_ table: CircleProjectionTable, where filters: [String: String] = [:]) async throws -> Data {
+    public func read(_ table: CircleProjectionTable, where filters: [String: String] = [:], exactIDs: Bool = false) async throws -> Data {
         guard Set(filters.keys).isSubset(of: Set(table.columns)) else {
             throw CircleConnectionError.invalidConfiguration
         }
         var allRows: [[String: Any]] = []
         var identities = Set<String>(), cursors = Set<String>()
+        var exactIdentities = Set<Data>(), exactCursors = Set<Data>()
         var after: String?
         repeat {
             try Task.checkCancellation()
@@ -35,7 +36,7 @@ public struct CirclePeopleReader: Sendable {
                   let rawCursor = page["next_cursor"] else { throw CircleConnectionError.invalidResponse }
             for row in rows {
                 guard Set(row.keys) == Set(table.columns), let id = row["id"] as? String,
-                      !id.isEmpty, identities.insert(id).inserted,
+                      !id.isEmpty, (exactIDs ? exactIdentities.insert(Data(id.utf8)).inserted : identities.insert(id).inserted),
                       filters.allSatisfy({ row[$0.key] as? String == $0.value }) else {
                     throw CircleConnectionError.invalidResponse
                 }
@@ -45,7 +46,9 @@ public struct CirclePeopleReader: Sendable {
             if rawCursor is NSNull { after = nil }
             else {
                 guard let next = rawCursor as? String, !next.isEmpty,
-                      next == rows.last?["id"] as? String, cursors.insert(next).inserted else {
+                      let lastID = rows.last?["id"] as? String,
+                      (exactIDs ? Data(next.utf8) == Data(lastID.utf8) : next == lastID),
+                      (exactIDs ? exactCursors.insert(Data(next.utf8)).inserted : cursors.insert(next).inserted) else {
                     throw CircleConnectionError.invalidResponse
                 }
                 after = next
@@ -64,12 +67,12 @@ public struct CirclePeopleReader: Sendable {
         var graph = try bindings.graph(people: people, relations: relations, locations: locations, photos: photos, selfID: selfID)
         if let table = bindings.circleDefinitions {
             do {
-                let data = try await read(table)
-                graph.circleMetadata = try CircleMetadata.read(data, table: table, people: Set(graph.byID.keys))
+                let data = try await read(table, exactIDs: true)
+                graph.circleMetadata = try CircleMetadata.read(data, table: table, people: graph.people.map(\.id))
             } catch is CancellationError { throw CancellationError() }
             catch {
                 var retained = previousMetadata?.definitions ?? []
-                do { try CircleMetadata.validate(retained, people: Set(graph.byID.keys)) }
+                do { try CircleMetadata.validate(retained, people: graph.people.map(\.id)) }
                 catch { retained = [] }
                 graph.circleMetadata = CircleMetadata(definitions: retained, unavailable: true)
             }

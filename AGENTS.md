@@ -175,7 +175,10 @@ not Buttons, so a swipe never selects.
 An optional service-bound `circleDefinitions` registry adds stable metadata IDs,
 reviewed names/kinds, period wording and exact dates, parent and linked-person
 references. Exact `sourceLabel` is the legacy compatibility key; `people.circles`
-remains the membership authority. Unknown/unmapped labels keep their original
+remains the membership authority. Registry label, ID and reference matching uses
+exact UTF-8 bytes; display strings are preserved. Malformed optional cached
+metadata is isolated from the strictly decoded People/cache envelope.
+Unknown/unmapped labels keep their original
 wording and legacy group IDs. Registry reads use the bounded projected reader;
 duplicate labels, dangling references, cycles and invalid dates invalidate the
 metadata, never the People graph. Failed optional refreshes retain valid previous

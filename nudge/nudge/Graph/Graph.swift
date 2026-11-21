@@ -84,7 +84,7 @@ struct SocialGraph: Sendable {
     let selfID: String?
     var circleMetadata: CircleMetadata?
     func circleDefinition(for sourceLabel: String) -> CircleDefinition? {
-        circleMetadata?.definitions.first { $0.sourceLabel == sourceLabel }
+        circleMetadata?.definitions.first { Data($0.sourceLabel.utf8) == Data(sourceLabel.utf8) }
     }
     private let adjacency: [String: Set<String>]
 
@@ -158,8 +158,11 @@ struct SocialGraph: Sendable {
             }
             return result
         }
-        let circleIDs = (circleMetadata?.definitions ?? []).reduce(into: [String: String]()) { result, definition in
-            result[definition.sourceLabel] = definition.id
+        let circleIDs = (circleMetadata?.definitions ?? []).reduce(into: [Data: String]()) { result, definition in
+            // ASCII keys preserve existing registry IDs; other IDs need an exact byte encoding.
+            let id = definition.id
+            result[Data(definition.sourceLabel.utf8)] = id.utf8.allSatisfy { $0 < 128 }
+                ? "circle:id:" + id : "circle:utf8:" + Data(id.utf8).base64EncodedString()
         }
         var members: [String: [String]] = [:], labels: [String: String] = [:]
         for person in people {
@@ -181,7 +184,7 @@ struct SocialGraph: Sendable {
                 entries = [("circle:unassigned", "Unassigned")]
             } else {
                 entries = Set(person.circles).sorted().map { label in
-                    (circleIDs[label].map { "circle:id:" + $0 } ?? "circle:value:" + label, label)
+                    (circleIDs[Data(label.utf8)] ?? "circle:value:" + label, label)
                 }
             }
             for (id, label) in entries {

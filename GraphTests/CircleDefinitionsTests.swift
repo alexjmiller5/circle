@@ -134,3 +134,66 @@ private func graphPages(_ definitions: [CircleHTTPReply]) throws -> [CircleHTTPR
     #expect(loaded.graph.circleMetadata?.unavailable == true)
     #expect(loaded.graph.circleMetadata?.definitions.isEmpty == true)
 }
+
+@Test func malformedOptionalMetadataDoesNotDiscardOtherwiseValidPeopleCache() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at:directory) }
+    let cache = CircleGraphCache(directory:directory), profile = String(repeating:"a",count:64)
+    let graph = SocialGraph(people:[GraphPerson(id:"p1",name:"Person 1",circles:["Context"])],relations:[],selfID:"p1")
+    try cache.save(graph,refreshedAt:Date(timeIntervalSince1970:0),profile:profile)
+    let file = directory.appendingPathComponent(profile + ".json")
+    let original = try JSONSerialization.jsonObject(with:Data(contentsOf:file)) as! [String:Any]
+    var numericParent = definition(); numericParent["parent"] = 42
+    var missingName = definition(); missingName.removeValue(forKey:"name")
+    for malformed: Any in [42, ["definitions":"wrong","unavailable":false], ["definitions":[numericParent],"unavailable":false], ["definitions":[missingName],"unavailable":false], ["definitions":[],"unavailable":"wrong"]] {
+        var value = original; value["circleMetadata"] = malformed
+        try JSONSerialization.data(withJSONObject:value).write(to:file)
+        do {
+            let loaded = try #require(try cache.load(profile:profile))
+            #expect(loaded.graph.people == graph.people)
+            #expect(loaded.graph.selfID == "p1")
+            #expect(loaded.graph.circleMetadata?.unavailable == true)
+            #expect(loaded.graph.circleMetadata?.definitions.isEmpty == true)
+        } catch { Issue.record("Optional metadata discarded valid People: \(error)") }
+    }
+    var invalidCore = original; invalidCore["people"] = "wrong"
+    try JSONSerialization.data(withJSONObject:invalidCore).write(to:file)
+    #expect(throws:(any Error).self) { try cache.load(profile:profile) }
+}
+
+@Test func byteDistinctRegistryLabelsNeverAcquireAnotherLabelsIdentity() async throws {
+    let composed = "caf\u{00e9}", decomposed = "cafe\u{0301}"
+    #expect(Data(composed.utf8) != Data(decomposed.utf8))
+    let people = try page([["id":"p1","name":"Person 1","circles":String(decoding:JSONEncoder().encode([decomposed]),as:UTF8.self),"deleted_at":NSNull()]])
+    let graph = try await CirclePeopleReader(client:DefinitionHTTP([people,try page([]),try page([]),try page([definition(label:composed)])])).graph(bindings:definitionBindings(),selfID:nil)
+    #expect(graph.circleDefinition(for:decomposed) == nil)
+    #expect(graph.groups(by:.circles,location:.base).first?.id == "circle:value:" + decomposed)
+    let both = try await CirclePeopleReader(client:DefinitionHTTP(try graphPages([page([definition("g1",label:composed),definition("g2",label:decomposed)])]))).graph(bindings:definitionBindings(),selfID:nil)
+    #expect(both.circleMetadata?.unavailable == false)
+    #expect(both.circleDefinition(for:composed)?.id == "g1")
+    #expect(both.circleDefinition(for:decomposed)?.id == "g2")
+}
+
+@Test func registryIDsAndReferencesUseExactUTF8Bytes() async throws {
+    let composed = "caf\u{00e9}", decomposed = "cafe\u{0301}"
+    let bindings = try definitionBindings()
+    let valid = try await CirclePeopleReader(client:DefinitionHTTP(try graphPages([page([definition(composed,label:"First"),definition(decomposed,label:"Second",parent:composed)])]))).graph(bindings:bindings,selfID:nil)
+    #expect(valid.circleMetadata?.unavailable == false)
+    #expect(valid.circleMetadata?.definitions.count == 2)
+    let dangling = try await CirclePeopleReader(client:DefinitionHTTP(try graphPages([page([definition(composed,parent:decomposed)])]))).graph(bindings:bindings,selfID:nil)
+    #expect(dangling.circleMetadata?.unavailable == true)
+    let people = try page([["id":composed,"name":"Person 1","circles":"[]","deleted_at":NSNull()]])
+    let wrongPerson = try await CirclePeopleReader(client:DefinitionHTTP([people,try page([]),try page([]),try page([definition(person:decomposed)])])).graph(bindings:bindings,selfID:nil)
+    #expect(wrongPerson.circleMetadata?.unavailable == true)
+}
+
+@Test func byteDistinctRegistryIDsKeepSeparateGroupsAndExactPageCursors() async throws {
+    let composed = "caf\u{00e9}", decomposed = "cafe\u{0301}"
+    let people = try page([["id":"p1","name":"Person 1","circles":"[\"First\",\"Second\"]","deleted_at":NSNull()]])
+    let graph = try await CirclePeopleReader(client:DefinitionHTTP([people,try page([]),try page([]),try page([definition(composed,label:"First"),definition(decomposed,label:"Second")])])).graph(bindings:definitionBindings(),selfID:nil)
+    let groups = graph.groups(by:.circles,location:.base)
+    #expect(groups.count == 2)
+    #expect(Set(groups.map { Data($0.id.utf8) }).count == 2)
+    let wrongCursor = try await CirclePeopleReader(client:DefinitionHTTP(try graphPages([page([definition(composed)],cursor:decomposed),page([])]))).graph(bindings:definitionBindings(),selfID:nil)
+    #expect(wrongCursor.circleMetadata?.unavailable == true)
+}
