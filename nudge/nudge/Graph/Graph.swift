@@ -183,8 +183,13 @@ struct SocialGraph: Sendable {
             } else if person.circles.isEmpty {
                 entries = [("circle:unassigned", "Unassigned")]
             } else {
-                entries = Set(person.circles).sorted().map { label in
-                    (circleIDs[Data(label.utf8)] ?? "circle:value:" + label, label)
+                var seenGroups = Set<String>()
+                let distinct = circleMetadata == nil ? Set(person.circles).sorted() : person.circles
+                    .sorted { Data($0.utf8).lexicographicallyPrecedes(Data($1.utf8)) }
+                entries = distinct.compactMap { label in
+                    let id = circleIDs[Data(label.utf8)] ?? "circle:value:" + label
+                    // Unmapped labels still share their existing legacy group identity.
+                    return seenGroups.insert(id).inserted ? (id, label) : nil
                 }
             }
             for (id, label) in entries {

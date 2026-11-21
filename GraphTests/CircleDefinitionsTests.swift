@@ -197,3 +197,22 @@ private func graphPages(_ definitions: [CircleHTTPReply]) throws -> [CircleHTTPR
     let wrongCursor = try await CirclePeopleReader(client:DefinitionHTTP(try graphPages([page([definition(composed)],cursor:decomposed),page([])]))).graph(bindings:definitionBindings(),selfID:nil)
     #expect(wrongCursor.circleMetadata?.unavailable == true)
 }
+
+@Test func onePersonKeepsBothByteDistinctMappedMembershipsAndDeduplicatesExactLabels() async throws {
+    let composed = "caf\u{00e9}", decomposed = "cafe\u{0301}"
+    let sourceLabels = [composed,decomposed,composed,decomposed]
+    let people = try page([["id":"p1","name":"Person 1","circles":String(decoding:JSONEncoder().encode(sourceLabels),as:UTF8.self),"deleted_at":NSNull()]])
+    let graph = try await CirclePeopleReader(client:DefinitionHTTP([people,try page([]),try page([]),try page([definition("g1",label:composed),definition("g2",label:decomposed)])])).graph(bindings:definitionBindings(),selfID:nil)
+    let groups = graph.groups(by:.circles,location:.base)
+    #expect(Set(groups.map(\.id)) == ["circle:id:g1","circle:id:g2"])
+    #expect(groups.count == 2)
+    #expect(groups.allSatisfy { $0.members == ["p1"] })
+    #expect(Set(groups.map { Data($0.name.utf8) }) == Set([Data(composed.utf8),Data(decomposed.utf8)]))
+    #expect(graph.people[0].circles.map { Data($0.utf8) } == sourceLabels.map { Data($0.utf8) })
+    let legacy = SocialGraph(people:graph.people,relations:[],selfID:nil)
+    #expect(legacy.groups(by:.circles,location:.base).count == 1)
+    #expect(legacy.groups(by:.circles,location:.base).first?.members == ["p1"])
+    let unmapped = SocialGraph(people:graph.people,relations:[],selfID:nil,circleMetadata:CircleMetadata(definitions:[],unavailable:false))
+    #expect(unmapped.groups(by:.circles,location:.base).count == 1)
+    #expect(unmapped.groups(by:.circles,location:.base).first?.members == ["p1"])
+}
